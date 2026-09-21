@@ -1,7 +1,11 @@
 import unittest
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "niveau1"))
 
 from sanctions_screening import adapt_eu_source, load_official_watchlist, score_name_match
 
@@ -34,7 +38,7 @@ class OfficialSourcesTests(unittest.TestCase):
         self.assertGreaterEqual(score, 95)
 
     def test_load_official_watchlist(self):
-        base_dir = Path(__file__).resolve().parents[1]
+        base_dir = Path(__file__).resolve().parents[1] / "niveau1"
         watchlist = load_official_watchlist(base_dir)
 
         self.assertFalse(watchlist.empty)

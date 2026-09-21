@@ -24,9 +24,18 @@ python demo.py
 
 ## Brancher les vraies listes (à faire avant le hackathon ou sur place)
 
-Les données actuelles dans `sample_data/` sont **entièrement fictives**,
-créées pour tester le moteur. Avant le 2-4 octobre, remplacer par les
-vraies listes :
+Les données de démonstration dans `sample_data/` sont fictives. Le service
+ML charge désormais par défaut les exports officiels embarqués dans ce
+dossier : UE, OFAC et ONU. Les versions intégrées ont été actualisées le
+21 septembre 2026 : OFAC SDN indique une mise à jour au 18 septembre 2026,
+et l'ONU au 19 septembre 2026.
+
+L'export UE actuel provient du fichier téléchargé le 5 août 2026. Le portail
+UE demande une authentification EU Login pour obtenir un nouvel export ; il
+faudra remplacer ce fichier dès qu'un compte autorisé est disponible.
+
+Pour une utilisation réelle, remplacer les listes par les versions officielles
+les plus récentes :
 
 | Source | Où télécharger | Format |
 |---|---|---|
