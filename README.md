@@ -42,6 +42,39 @@ Ouvrir `http://127.0.0.1:5173`.
 
 Compte de démonstration : `admin.test` / `DigiAML@2026`.
 
+## Activer le LLM du chatbot
+
+La clé reste uniquement dans `SENTINELLE-CIF-API/.env`.
+
+Pour Grok :
+
+```env
+LLM_PROVIDER=grok
+LLM_API_KEY=ta_cle_xai
+LLM_BASE_URL=https://api.x.ai/v1
+LLM_MODEL=grok-3-mini
+```
+
+Pour OpenAI :
+
+```env
+LLM_PROVIDER=openai
+LLM_API_KEY=ta_cle_openai
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+```
+
+Après toute modification de `.env` :
+
+```powershell
+cd SENTINELLE-CIF-API
+php artisan config:clear
+```
+
+Sans clé LLM, le chatbot conserve son mode local déterministe. Avec une clé,
+`POST /api/v1/ml/chat` envoie la question et le contexte du dossier au LLM;
+la clé n’est jamais envoyée au frontend.
+
 ## Vérifications
 
 ```powershell

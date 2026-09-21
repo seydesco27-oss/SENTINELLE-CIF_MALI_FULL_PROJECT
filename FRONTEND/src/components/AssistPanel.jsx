@@ -390,9 +390,9 @@ export default function AssistPanel({
             placeholder="Ex. résumer cette alerte…"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            disabled={!objectId}
+            disabled={loading}
           />
-          <button type="submit" className="assist-btn primary" disabled={!objectId || loading}>
+          <button type="submit" className="assist-btn primary" disabled={loading}>
             Envoyer
           </button>
         </form>

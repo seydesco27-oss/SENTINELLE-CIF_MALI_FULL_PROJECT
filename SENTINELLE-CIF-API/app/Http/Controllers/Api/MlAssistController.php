@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Throwable;
 
 /**
@@ -139,10 +140,10 @@ class MlAssistController extends \App\Http\Controllers\Controller
         $id = (int) $request->input('object_id');
         $message = trim((string) $request->input('message', ''));
 
-        if ($id <= 0 || !in_array($type, ['alert', 'client'], true) || $message === '') {
+        if ((!in_array($type, ['alert', 'client', 'general'], true) || ($type !== 'general' && $id <= 0)) || $message === '') {
             return response()->json([
                 'success' => false,
-                'message' => 'object_type, object_id et message sont requis.',
+                'message' => 'message requis; object_type doit être alert, client ou general.',
             ], 422);
         }
 
@@ -163,7 +164,9 @@ class MlAssistController extends \App\Http\Controllers\Controller
 
         $context = $type === 'alert'
             ? DB::table('v_assist_alert_context')->where('alert_id', $id)->first()
-            : DB::table('v_assist_client_context')->where('client_id', $id)->first();
+            : ($type === 'client'
+                ? DB::table('v_assist_client_context')->where('client_id', $id)->first()
+                : (object) ['scope' => 'general']);
 
         if (!$context && $type === 'alert') {
             $context = $this->fallbackAlertContext($id);
@@ -178,17 +181,97 @@ class MlAssistController extends \App\Http\Controllers\Controller
 
         $payload = $type === 'alert'
             ? $this->buildAlertAssist($context, $action)
-            : $this->buildClientAssist($context, $action);
+            : ($type === 'client'
+                ? $this->buildClientAssist($context, $action)
+                : [
+                    'object_type' => 'general',
+                    'object_id' => null,
+                    'summary' => 'Question générale sans dossier associé.',
+                    'sources' => [],
+                ]);
+
+        try {
+            $llm = $this->askLlm($message, $payload);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Le fournisseur LLM est indisponible.',
+                'error' => $e->getMessage(),
+            ], 502);
+        }
 
         return response()->json([
             'success' => true,
             'data' => [
-                'message' => $payload['summary'] ?? 'Analyse contextuelle disponible.',
+                'message' => $llm['text'] ?? $payload['summary'] ?? 'Analyse contextuelle disponible.',
                 'intent' => $action,
+                'provider' => $llm['provider'] ?? 'template',
                 'payload' => $payload,
-                'disclaimer' => 'Réponse contextuelle — vérifier les faits et conserver la décision humaine.',
+                'disclaimer' => $llm
+                    ? 'Réponse générée par IA à partir du contexte disponible. Vérifier les faits et conserver la décision humaine.'
+                    : 'Réponse contextuelle — vérifier les faits et conserver la décision humaine.',
             ],
         ]);
+    }
+
+    private function askLlm(string $question, array $payload): ?array
+    {
+        $provider = strtolower((string) env('LLM_PROVIDER', 'grok'));
+        $apiKey = (string) env('LLM_API_KEY', '');
+
+        if ($apiKey === '') {
+            $apiKey = $provider === 'openai'
+                ? (string) env('OPENAI_API_KEY', '')
+                : (string) env('GROK_API_KEY', '');
+        }
+
+        if ($apiKey === '') {
+            return null;
+        }
+
+        $baseUrl = rtrim((string) env(
+            'LLM_BASE_URL',
+            $provider === 'openai' ? 'https://api.openai.com/v1' : 'https://api.x.ai/v1'
+        ), '/');
+        $model = (string) env(
+            'LLM_MODEL',
+            $provider === 'openai' ? 'gpt-4o-mini' : 'grok-3-mini'
+        );
+        $context = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        $context = mb_substr((string) $context, 0, 14000);
+
+        $response = Http::withToken($apiKey)
+            ->acceptJson()
+            ->timeout(30)
+            ->post($baseUrl . '/chat/completions', [
+                'model' => $model,
+                'temperature' => 0.2,
+                'max_tokens' => 900,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es Sentinelle Assist, un copilote de conformité LBC/FT/FP. Réponds en français, de façon claire et utile. Tu peux répondre aux questions générales, mais pour les questions du dossier utilise uniquement les faits fournis. N invente jamais une donnée absente. Sépare les faits, les hypothèses et les vérifications à faire. Ne prends jamais une décision réglementaire, ne recommande jamais automatiquement un blocage et rappelle que la décision appartient à l analyste humain.',
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Contexte du dossier :\n{$context}\n\nQuestion de l analyste :\n{$question}",
+                    ],
+                ],
+            ]);
+
+        if (!$response->successful()) {
+            throw new \RuntimeException('Réponse fournisseur: HTTP ' . $response->status());
+        }
+
+        $text = $response->json('choices.0.message.content');
+        if (!is_string($text) || trim($text) === '') {
+            throw new \RuntimeException('Réponse LLM vide ou non conforme.');
+        }
+
+        return [
+            'text' => trim($text),
+            'provider' => $provider,
+        ];
     }
 
     private function buildAlertAssist(object $c, string $action): array
