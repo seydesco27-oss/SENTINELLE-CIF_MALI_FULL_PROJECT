@@ -1,0 +1,206 @@
+.network-page {
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+  --accent: #2563eb;
+  --accent-text: #1e40af;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
+  padding: 24px 28px 48px;
+}
+.network-page .page-heading { margin-bottom: 18px; }
+.network-page .eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent-text);
+  font: 600 10px/1.2 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: .12em;
+}
+.network-page .page-heading h1 {
+  margin: 0;
+  font-size: 26px;
+  color: var(--text-primary);
+  letter-spacing: -.03em;
+}
+.network-page .page-heading p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.nw-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+.nw-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nw-toolbar label span {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  letter-spacing: .06em;
+}
+.nw-toolbar select {
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 0 10px;
+  background: #fff;
+}
+.nw-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.network-chain {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: #eef2ff;
+  border: 1px solid #dbe1f5;
+  border-radius: 8px;
+}
+.network-chain > div {
+  flex: 1;
+  min-width: 90px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.network-chain span {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  letter-spacing: .05em;
+  margin-bottom: 4px;
+}
+.network-chain strong {
+  font-size: 16px;
+  color: var(--text-primary);
+}
+.network-chain i {
+  align-self: center;
+  font-style: normal;
+  color: #94a3b8;
+  font-weight: 700;
+}
+.network-chain .network-critical {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+.network-chain .network-critical strong { color: #b91c1c; }
+
+.data-panel {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 16px;
+}
+.table-scroll { overflow-x: auto; }
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 880px;
+}
+.data-table th {
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--text-tertiary);
+  background: #fbfcfe;
+  border-bottom: 1px solid var(--border);
+  font: 600 10px/1.2 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #edf1f5;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.data-table td.mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 11px;
+}
+.network-critical-text { color: #b91c1c !important; }
+.empty-cell {
+  text-align: center !important;
+  color: var(--text-tertiary) !important;
+  padding: 32px !important;
+}
+.table-note {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.text-link {
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.network-focus {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+}
+.network-focus header { margin-bottom: 10px; }
+.network-focus h2 {
+  margin: 4px 0 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+.network-focus strong {
+  display: block;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.network-focus p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.nw-loading {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.nw-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  border-radius: 6px;
+}

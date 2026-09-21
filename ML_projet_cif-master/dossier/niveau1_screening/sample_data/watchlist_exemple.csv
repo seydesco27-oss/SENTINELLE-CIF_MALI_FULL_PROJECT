@@ -1,0 +1,11 @@
+source,entry_id,full_name,aliases,entry_type,program
+DEMO,D001,Amadou Traore Diallo,A. Traore Diallo | Amadou T. Diallo,individu,DEMO-PPE
+DEMO,D002,Fatoumata Kone Sangare,F. Kone Sangare,individu,DEMO-SANCTIONS
+DEMO,D003,Global Trading Sahel SARL,GTS SARL | Global Trading Sahel,entite,DEMO-SANCTIONS
+DEMO,D004,Ibrahim Ould Cheikh,Ibrahim O. Cheikh | Ibrahim Cheikh,individu,DEMO-PPE
+DEMO,D005,Compagnie Miniere du Nord,CMN | Compagnie Miniere Nord SA,entite,DEMO-SANCTIONS
+DEMO,D006,Mariam Toure Coulibaly,M. Toure Coulibaly | Mariam T Coulibaly,individu,DEMO-PPE
+DEMO,D007,Ousmane Bah Barry,O. Bah Barry,individu,DEMO-SANCTIONS
+DEMO,D008,Sahel Logistics Transport,SLT | Sahel Logistics,entite,DEMO-SANCTIONS
+DEMO,D009,Aissata Diarra Sidibe,A. Diarra Sidibe,individu,DEMO-PPE
+DEMO,D010,Moussa Konate Keita,M. Konate Keita | Moussa K. Keita,individu,DEMO-SANCTIONS

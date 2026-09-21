@@ -1,0 +1,90 @@
+==============================================================================
+DISTRIBUTION DES CLASSES (split par CLIENT, sans fuite)
+==============================================================================
+Dataset complet : 9769 transactions, 800 clients
+  - Classe 0 (normal)  : 9704 (99.33%)
+  - Classe 1 (risqué)  : 65 (0.67%)
+
+CV set (80% clients)  : 7841 transactions, 640 clients
+  - Classe 0  : 7789 (99.34%)
+  - Classe 1  : 52 (0.66%)
+
+Holdout test (20% clients)  : 1928 transactions, 160 clients
+  - Classe 0  : 1915 (99.33%)
+  - Classe 1  : 13 (0.67%)
+
+Clients partagés CV/holdout : 0 (attendu : 0)
+
+==============================================================================
+VALIDATION CROISÉE (K-FOLD PAR CLIENT, k=5)
+==============================================================================
+  Fold 1: Train=6278 tx (513 clients), Val=1563 tx (127 clients)
+    -> Accuracy=99.42%, AUC-ROC=0.997, AUC-PR=0.507
+  Fold 2: Train=6277 tx (511 clients), Val=1564 tx (129 clients)
+    -> Accuracy=100.00%, AUC-ROC=1.000, AUC-PR=1.000
+  Fold 3: Train=6273 tx (512 clients), Val=1568 tx (128 clients)
+    -> Accuracy=99.94%, AUC-ROC=1.000, AUC-PR=0.975
+  Fold 4: Train=6265 tx (511 clients), Val=1576 tx (129 clients)
+    -> Accuracy=99.56%, AUC-ROC=0.999, AUC-PR=0.881
+  Fold 5: Train=6271 tx (513 clients), Val=1570 tx (127 clients)
+    -> Accuracy=99.55%, AUC-ROC=0.999, AUC-PR=0.907
+
+------------------------------------------------------------------------------
+Résultats moyens CV :
+  Accuracy    : 99.69% ± 0.23%
+  AUC-ROC     : 0.999 ± 0.001
+  AUC-PR      : 0.854 ± 0.179
+
+==============================================================================
+MODELE FINAL (ENTRAINÉ SUR TOUT LE CV SET)
+==============================================================================
+
+AUC-ROC test holdout : 1.000
+AUC-PR test holdout  : 0.979
+
+Rapport de classification holdout test (en %) :
+- Accuracy : 99.84%
+- Classe False : precision=99.95%, recall=99.90%, f1-score=99.92%, support=1915
+- Classe True : precision=85.71%, recall=92.31%, f1-score=88.89%, support=13
+- macro avg : precision=92.83%, recall=96.10%, f1-score=94.41%
+- weighted avg : precision=99.85%, recall=99.84%, f1-score=99.85%
+
+Matrice de confusion :
+             Pred=0    Pred=1
+Actual=0       1913         2
+Actual=1          1        12
+
+Interprétation :
+- Vrais négatifs (TN)    : 1913
+- Faux positifs (FP)     : 2
+- Faux négatifs (FN)     : 1
+- Vrais positifs (TP)    : 12
+
+==============================================================================
+IMPORTANCE DES FEATURES
+==============================================================================
+Total de features après encoding: 16
+
+Top 15 features par importance (indices) :
+   1. Feature_0: 37.55%
+   2. Feature_1: 29.89%
+   3. Feature_2: 16.11%
+   4. Feature_10: 6.95%
+   5. Feature_8: 2.81%
+   6. Feature_3: 1.95%
+   7. Feature_4: 1.36%
+   8. Feature_13: 1.03%
+   9. Feature_6: 0.68%
+  10. Feature_7: 0.60%
+  11. Feature_11: 0.33%
+  12. Feature_9: 0.24%
+  13. Feature_5: 0.16%
+  14. Feature_12: 0.15%
+  15. Feature_15: 0.10%
+
+Mapping (premières features = numeric_features):
+  - log_amount
+  - amount_ratio_to_client_median
+  - amount_zscore
+  - client_age_days
+  - is_weekend
