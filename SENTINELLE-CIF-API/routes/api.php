@@ -459,6 +459,7 @@ Route::get('/network', [
 Route::get('/ml/assist/alert/{id}', [MlAssistController::class, 'alertContext']);
 Route::get('/ml/assist/client/{id}', [MlAssistController::class, 'clientContext']);
 Route::post('/ml/assist', [MlAssistController::class, 'assist']);
+Route::post('/ml/chat', [MlAssistController::class, 'chat']);
 
 // --- Score ML (microservice Python) ---
 Route::get('/ml/health', [MlScoreController::class, 'health']);

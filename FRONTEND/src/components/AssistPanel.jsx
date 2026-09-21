@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { postAssist, postMlScore } from "../services/api";
+import { postAssist, postAssistChat, postMlScore } from "../services/api";
 import "./AssistPanel.css";
 
 /**
@@ -33,6 +33,12 @@ export default function AssistPanel({
   const [result, setResult] = useState(null);
   const [mlScore, setMlScore] = useState(null);
   const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      content: "Je peux résumer le dossier, expliquer les signaux, proposer des vérifications ou préparer un brouillon CENTIF.",
+    },
+  ]);
 
   // Reset when dossier change
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -41,6 +47,12 @@ export default function AssistPanel({
     setMlScore(null);
     setError("");
     setQuestion("");
+    setMessages([
+      {
+        role: "assistant",
+        content: "Je peux résumer le dossier, expliquer les signaux, proposer des vérifications ou préparer un brouillon CENTIF.",
+      },
+    ]);
   }, [objectType, objectId]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -79,7 +91,16 @@ export default function AssistPanel({
             ? { client_id: Number(objectId) }
             : {};
       const res = await postMlScore(body);
-      if (res?.success) setMlScore(res.data);
+      if (res?.success) {
+        setMlScore(res.data);
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            content: `Score ML calculé : ${res.data?.label || "indisponible"}. Score final : ${res.data?.final_score != null ? Number(res.data.final_score).toFixed(2) : "—"}.`,
+          },
+        ]);
+      }
       else setError(res?.message || "Score ML indisponible.");
     } catch (err) {
       setError(
@@ -91,17 +112,48 @@ export default function AssistPanel({
     }
   }
 
+  async function runChat(message) {
+    if (!objectId || !message) return;
+    setLoading(true);
+    setError("");
+    setMessages((current) => [...current, { role: "user", content: message }]);
+    try {
+      const res = await postAssistChat({
+        object_type: objectType,
+        object_id: Number(objectId),
+        message,
+      });
+      if (res?.success) {
+        setResult(res.data?.payload || null);
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            content: res.data?.message || "Réponse contextuelle disponible.",
+          },
+        ]);
+      } else {
+        setError(res?.message || "Chatbot indisponible.");
+      }
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          "Impossible de contacter le chatbot de conformité."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function onAsk(e) {
     e.preventDefault();
-    const q = question.trim().toLowerCase();
+    const text = question.trim();
+    const q = text.toLowerCase();
     if (!q) return;
-    if (q.includes("score") || q.includes("ml")) runMlScore();
-    else if (q.includes("question") || q.includes("diligence"))
-      run("suggest_questions");
-    else if (q.includes("brouillon") || q.includes("centif") || q.includes("déclar"))
-      run("draft_centif");
-    else if (q.includes("expliqu")) run("explain");
-    else run("summarize");
+    if (q.includes("score") || q.includes("ml")) {
+      setMessages((current) => [...current, { role: "user", content: text }]);
+      runMlScore();
+    } else runChat(text);
     setQuestion("");
   }
 
@@ -199,6 +251,20 @@ export default function AssistPanel({
           </div>
 
           {error && <div className="assist-error">{error}</div>}
+
+          {objectId && (
+            <div className="assist-conversation" aria-live="polite">
+              {messages.map((message, index) => (
+                <div
+                  className={`assist-message is-${message.role}`}
+                  key={`${message.role}-${index}`}
+                >
+                  <span>{message.role === "user" ? "Vous" : "Assist"}</span>
+                  <p>{message.content}</p>
+                </div>
+              ))}
+            </div>
+          )}
 
           {mlScore && (
             <div className="assist-ml-box">

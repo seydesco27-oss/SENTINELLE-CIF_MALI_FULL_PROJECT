@@ -371,6 +371,15 @@ export const postAssist = async ({ object_type, object_id, action = "summarize" 
   return response.data;
 };
 
+export const postAssistChat = async ({ object_type, object_id, message }) => {
+  const response = await api.post("/ml/chat", {
+    object_type,
+    object_id,
+    message,
+  });
+  return response.data;
+};
+
 /** Score ML via Laravel -> microservice Python */
 export const postMlScore = async ({ alert_id, transaction_id, client_id } = {}) => {
   const response = await api.post("/ml/score", {

@@ -129,6 +129,68 @@ class MlAssistController extends \App\Http\Controllers\Controller
         }
     }
 
+    /**
+     * POST /api/v1/ml/chat
+     * Chat contextuel deterministe pour l'analyste; aucune decision n'est prise.
+     */
+    public function chat(Request $request): JsonResponse
+    {
+        $type = strtolower((string) $request->input('object_type', 'alert'));
+        $id = (int) $request->input('object_id');
+        $message = trim((string) $request->input('message', ''));
+
+        if ($id <= 0 || !in_array($type, ['alert', 'client'], true) || $message === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'object_type, object_id et message sont requis.',
+            ], 422);
+        }
+
+        if (mb_strlen($message) > 1000) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Le message ne peut pas dépasser 1 000 caractères.',
+            ], 422);
+        }
+
+        $normalized = mb_strtolower($message);
+        $action = match (true) {
+            str_contains($normalized, 'question') || str_contains($normalized, 'diligence') => 'suggest_questions',
+            str_contains($normalized, 'brouillon') || str_contains($normalized, 'centif') || str_contains($normalized, 'déclar') => 'draft_centif',
+            str_contains($normalized, 'expliqu') || str_contains($normalized, 'pourquoi') => 'explain',
+            default => 'summarize',
+        };
+
+        $context = $type === 'alert'
+            ? DB::table('v_assist_alert_context')->where('alert_id', $id)->first()
+            : DB::table('v_assist_client_context')->where('client_id', $id)->first();
+
+        if (!$context && $type === 'alert') {
+            $context = $this->fallbackAlertContext($id);
+        }
+
+        if (!$context) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Contexte introuvable pour ce dossier.',
+            ], 404);
+        }
+
+        $payload = $type === 'alert'
+            ? $this->buildAlertAssist($context, $action)
+            : $this->buildClientAssist($context, $action);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'message' => $payload['summary'] ?? 'Analyse contextuelle disponible.',
+                'intent' => $action,
+                'payload' => $payload,
+                'disclaimer' => 'Réponse contextuelle — vérifier les faits et conserver la décision humaine.',
+            ],
+        ]);
+    }
+
     private function buildAlertAssist(object $c, string $action): array
     {
         $name = $c->customer_name ?? $c->client_number ?? 'Client';
