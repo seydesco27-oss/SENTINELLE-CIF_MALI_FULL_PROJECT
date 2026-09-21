@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping
 
+import pandas as pd
+
 from fusion_et_modele.backend_adapter import backend_to_model_features, validate_backend_transaction
 from fusion_et_modele.risk_predictor import predire_risque
 from niveau1_screening.sanctions_screening import SanctionsScreener, load_watchlist_csv
@@ -13,9 +15,11 @@ from niveau1_screening.sanctions_screening import SanctionsScreener, load_watchl
 class CIFRiskService:
     """Combine screening PPE/sanctions, regles backend et modele comportemental."""
 
-    def __init__(self, watchlist_path: str | Path | None = None):
+    def __init__(self, watchlist_path: str | Path | None = None, watchlist: pd.DataFrame | None = None):
         self.screener = None
-        if watchlist_path is not None:
+        if watchlist is not None:
+            self.screener = SanctionsScreener(watchlist)
+        elif watchlist_path is not None:
             self.screener = SanctionsScreener(load_watchlist_csv(watchlist_path))
 
     def assess(self, transaction: Mapping[str, object], client_name: str | None = None) -> dict:

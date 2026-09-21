@@ -18,6 +18,8 @@ class MlServiceTests(unittest.TestCase):
         self.assertEqual(payload["status"], "healthy")
         self.assertEqual(payload["model"], "MLPClassifier")
         self.assertEqual(payload["feature_count"], 20)
+        self.assertTrue(payload["screening"]["enabled"])
+        self.assertIn(payload["screening"]["watchlist_source"], {"OFFICIAL_BUNDLED", "DEMO"})
 
     def test_score_uses_exported_model_and_returns_combined_scores(self):
         response = self.client.post(
@@ -48,6 +50,7 @@ class MlServiceTests(unittest.TestCase):
         self.assertLessEqual(payload["model_score"], 1)
         self.assertGreaterEqual(payload["final_score"], 0)
         self.assertLessEqual(payload["final_score"], 1)
+        self.assertIn(payload["screening_risk_level"], {"aucun", "a_verifier", "alerte"})
 
     def test_score_rejects_missing_transaction(self):
         response = self.client.post("/score", json={})

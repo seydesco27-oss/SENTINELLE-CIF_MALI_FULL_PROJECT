@@ -30,6 +30,17 @@ historisees de la table C.
    effectue le screening Niveau 1 et retourne `model_score`, `rule_score`,
    `screening_score` et `final_score`.
 
+Le service HTTP charge par defaut la watchlist normalisee de demonstration
+`niveau1_screening/sample_data/watchlist_exemple.csv`. Le champ
+`health.screening` indique si le screening est actif et quelle source est
+chargee. Avant toute utilisation reelle, remplacer cette watchlist DEMO par
+les listes officielles OFAC, ONU et UE adaptees au meme schema.
+
+La base actuelle ne possede pas de compte beneficiaire sur les transactions.
+Les champs `in_degree` et `out_degree` envoyes par Laravel sont donc des
+proxys de connectivite bases sur les pays des flux historiques; ils ne doivent
+pas etre presentes comme un graphe complet avant ajout de cette relation.
+
 ## Service HTTP utilise par Laravel
 
 Le modele exporte est expose par `ml_service.py` sur le port `8100`. Laravel

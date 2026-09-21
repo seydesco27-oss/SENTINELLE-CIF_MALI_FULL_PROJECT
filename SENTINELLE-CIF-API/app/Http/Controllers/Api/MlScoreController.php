@@ -154,20 +154,45 @@ class MlScoreController extends \App\Http\Controllers\Controller
         $dayOfWeek = $t->transaction_date
             ? (int) date('N', strtotime($t->transaction_date))
             : (int) date('N');
+        $referenceDate = $t->transaction_date ?: now()->toDateTimeString();
 
         $agg30 = DB::table('transactions as t2')
             ->join('accounts as ac2', 'ac2.id', '=', 't2.account_id')
             ->where('ac2.client_id', $clientId)
-            ->where('t2.transaction_date', '>=', DB::raw("DATE_SUB(COALESCE((SELECT transaction_date FROM transactions WHERE id = {$transactionId}), NOW()), INTERVAL 30 DAY)"))
+            ->whereRaw('t2.transaction_date >= DATE_SUB(?, INTERVAL 30 DAY)', [$referenceDate])
+            ->where('t2.transaction_date', '<', $referenceDate)
             ->selectRaw('COUNT(*) as cnt, COALESCE(SUM(t2.amount),0) as vol')
             ->first();
 
         $agg24 = DB::table('transactions as t2')
             ->join('accounts as ac2', 'ac2.id', '=', 't2.account_id')
             ->where('ac2.client_id', $clientId)
-            ->where('t2.transaction_date', '>=', DB::raw("DATE_SUB(COALESCE((SELECT transaction_date FROM transactions WHERE id = {$transactionId}), NOW()), INTERVAL 24 HOUR)"))
+            ->whereRaw('t2.transaction_date >= DATE_SUB(?, INTERVAL 24 HOUR)', [$referenceDate])
+            ->where('t2.transaction_date', '<', $referenceDate)
             ->selectRaw('COUNT(*) as cnt, COALESCE(SUM(t2.amount),0) as vol')
             ->first();
+
+        $history = DB::table('transactions as t2')
+            ->join('accounts as ac2', 'ac2.id', '=', 't2.account_id')
+            ->where('ac2.client_id', $clientId)
+            ->where('t2.transaction_date', '<', $referenceDate);
+
+        $countriesFrom = (clone $history)->whereNotNull('t2.country_from')->pluck('t2.country_from');
+        $countriesTo = (clone $history)->whereNotNull('t2.country_to')->pluck('t2.country_to');
+        $countryCount = $countriesFrom->merge($countriesTo)->unique()->count();
+
+        // La base ne contient pas de compte beneficiaire: ces deux indicateurs
+        // sont des proxys de connectivite fondes sur les pays des flux.
+        $inDegree = (clone $history)
+            ->whereIn('t2.transaction_type', ['DEPOSIT', 'TRANSFER_IN'])
+            ->whereNotNull('t2.country_from')
+            ->distinct('t2.country_from')
+            ->count('t2.country_from');
+        $outDegree = (clone $history)
+            ->whereIn('t2.transaction_type', ['PAYMENT', 'TRANSFER_OUT', 'WITHDRAWAL'])
+            ->whereNotNull('t2.country_to')
+            ->distinct('t2.country_to')
+            ->count('t2.country_to');
 
         $amlRuleScore = (float) (DB::table('risk_assessments')
             ->where('transaction_id', $transactionId)
@@ -189,12 +214,12 @@ class MlScoreController extends \App\Http\Controllers\Controller
             'previous_volume_30d' => (float) ($agg30->vol ?? 0),
             'previous_transaction_count_24h' => (int) ($agg24->cnt ?? 0),
             'previous_volume_24h' => (float) ($agg24->vol ?? 0),
-            'country_count_30d' => 1,
+            'country_count_30d' => $countryCount,
             'aml_rule_score' => $amlRuleScore,
             'max_sanction_match_score' => $maxSanction,
             'sanction_match_flag' => $maxSanction > 0 ? 1 : 0,
-            'in_degree' => 0,
-            'out_degree' => 0,
+            'in_degree' => $inDegree,
+            'out_degree' => $outDegree,
         ];
 
         return [
