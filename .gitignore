@@ -31,3 +31,6 @@ Desktop.ini
 # Local test artifacts
 .coverage
 htmlcov/
+
+# Local reference documents
+tdr-appel-a-candidatures-global-hackathon-cif-digicoop-wa-2026.pdf
