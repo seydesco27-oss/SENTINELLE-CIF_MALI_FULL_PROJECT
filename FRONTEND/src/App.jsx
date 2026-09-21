@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import AlertDetail from "./pages/AlertDetail";
@@ -30,9 +30,16 @@ function ProtectedRoute() {
 function App() {
   const [user, setUser] = useState(getStoredUser());
 
+  useEffect(() => {
+    const syncUser = () => setUser(getStoredUser());
+    window.addEventListener("sentinelle-auth-changed", syncUser);
+    return () => window.removeEventListener("sentinelle-auth-changed", syncUser);
+  }, []);
+
   const handleLogout = async () => {
     await apiLogout();
     setUser(null);
+    window.dispatchEvent(new Event("sentinelle-auth-changed"));
   };
 
   return (

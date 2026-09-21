@@ -71,8 +71,8 @@ export default function MlAssistance({ user, onLogout }) {
               <p className="eyebrow">ANALYSE / INTELLIGENCE</p>
               <h1>Assistance ML & Sentinelle Assist</h1>
               <p>
-                Signaux comportementaux + copilote de conformité. La décision
-                reste humaine.
+                Signaux AML issus des vues SQL + copilote de conformité. La
+                décision reste humaine.
               </p>
             </div>
           </header>
@@ -105,6 +105,10 @@ export default function MlAssistance({ user, onLogout }) {
                     {rows.length} signal{rows.length !== 1 ? "x" : ""}
                   </span>
                 </header>
+                <p className="ml-source-note">
+                  Source : vue AML SQL. Le scoring MLP temps réel est disponible
+                  depuis Sentinelle Assist sur chaque dossier.
+                </p>
                 {loading ? (
                   <div className="ml-loading">Chargement…</div>
                 ) : (

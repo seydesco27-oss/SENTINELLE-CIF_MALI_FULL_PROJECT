@@ -163,7 +163,6 @@ const NAV_SECTIONS = [
       { to: "/ml", label: "Intelligence ML", icon: "ml" },
       { to: "/rapports", label: "Rapports", icon: "reports" },
       { to: "/audit", label: "Journal d'audit", icon: "audit" },
-      { to: "/centif", label: "Déclarations CENTIF", icon: "centif" },
     ],
   },
   {

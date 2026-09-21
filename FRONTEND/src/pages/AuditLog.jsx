@@ -121,7 +121,7 @@ export default function AuditLog({ user, onLogout }) {
                               {r.username ||
                                 r.user ||
                                 r.user_name ||
-                                "—"}
+                                (Number(r.user_id) === 0 ? "Système" : "—")}
                             </strong>
                             {(r.role || r.user_role) && (
                               <small className="sub">

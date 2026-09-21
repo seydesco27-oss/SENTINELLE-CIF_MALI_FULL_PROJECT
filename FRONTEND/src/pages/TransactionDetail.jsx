@@ -403,9 +403,13 @@ export default function TransactionDetail({ user, onLogout }) {
                               <td className="mono">
                                 {r.rule_code || r.rule_name || r.rule_id || "—"}
                               </td>
-                              <td>{r.result || r.status || "—"}</td>
+                              <td>{r.execution_result || r.result || r.status || "—"}</td>
                               <td className="mono">
-                                {r.score != null ? Number(r.score).toFixed(0) : "—"}
+                                {r.rule_score != null
+                                  ? Number(r.rule_score).toFixed(0)
+                                  : r.score != null
+                                    ? Number(r.score).toFixed(0)
+                                    : "—"}
                               </td>
                               <td>
                                 {formatDateTime(r.executed_at || r.created_at)}

@@ -4,6 +4,7 @@ import "./Parametres.css";
 
 export default function Parametres({ user, onLogout }) {
   const role =
+    user?.role?.name ||
     user?.role ||
     user?.roles?.[0] ||
     (Array.isArray(user?.roles) ? user.roles.join(", ") : null) ||
@@ -77,7 +78,10 @@ export default function Parametres({ user, onLogout }) {
               <div className="param-row">
                 <span className="param-label">Caisse / réseau</span>
                 <span className="param-value">
-                  {user?.caisse_name || user?.network || "CIF · Mali"}
+                  {user?.caisse_name ||
+                    user?.agency?.caisse?.name ||
+                    user?.network ||
+                    "CIF · Mali"}
                 </span>
               </div>
             </article>

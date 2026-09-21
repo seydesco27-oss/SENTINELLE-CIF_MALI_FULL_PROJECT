@@ -404,6 +404,33 @@ class TransactionController extends Controller
             }
 
 
+            if ($transaction) {
+                $clientContext = DB::table('transactions as t')
+                    ->leftJoin('accounts as a', 'a.id', '=', 't.account_id')
+                    ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
+                    ->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
+                    ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
+                    ->where('t.id', $id)
+                    ->select([
+                        'a.client_id',
+                        'a.account_number',
+                        'a.current_balance as account_current_balance',
+                        'c.client_number',
+                        'c.client_type',
+                        DB::raw("CASE WHEN ci.client_id IS NOT NULL THEN TRIM(CONCAT(COALESCE(ci.first_name,''),' ',COALESCE(ci.last_name,''))) WHEN ce.client_id IS NOT NULL THEN ce.legal_name ELSE c.client_number END as customer_name"),
+                    ])
+                    ->first();
+
+                if ($clientContext) {
+                    foreach ((array) $clientContext as $field => $value) {
+                        if (!isset($transaction->{$field}) || $transaction->{$field} === '') {
+                            $transaction->{$field} = $value;
+                        }
+                    }
+                }
+            }
+
+
             if (!$transaction) {
 
                 return response()->json([
@@ -535,6 +562,15 @@ class TransactionController extends Controller
                     ? 'ANALYZED'
                     : 'NOT_ANALYZED';
 
+            $assessmentScore = $riskAssessments->max('score');
+            $alertScore = $alerts->max('final_score');
+            $amlScore = collect([$assessmentScore, $alertScore])
+                ->filter(fn ($value) => $value !== null)
+                ->max();
+            $amlLevel = $riskAssessments->first()->risk_level
+                ?? $alerts->first()->priority
+                ?? null;
+
 
             return response()->json([
                 'success' => true,
@@ -560,6 +596,10 @@ class TransactionController extends Controller
 
                         'max_alert_score' =>
                             $alerts->max('final_score'),
+
+                        // Aliases consommés par le frontend transactionnel.
+                        'risk_score' => $amlScore,
+                        'risk_level' => $amlLevel,
                     ],
 
                     'alerts' => $alerts,

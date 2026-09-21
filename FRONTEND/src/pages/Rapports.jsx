@@ -39,7 +39,7 @@ export default function Rapports({ user, onLogout }) {
   const compliance = data?.compliance || {};
   const network = data?.network || {};
   const screening = data?.screening || {};
-  const centif = data?.centif || {};
+  const centif = data?.centif_declarations || data?.centif || {};
   const audit = data?.audit || {};
 
   return (
@@ -59,12 +59,16 @@ export default function Rapports({ user, onLogout }) {
             </div>
           </header>
 
+                    <li>
+                      PEP : <strong>{screening.distinct_pep_clients ?? screening.pep_clients ?? "—"}</strong>
+                    </li>
           {error && <div className="rp-error">{error}</div>}
 
           {loading ? (
             <div className="rp-loading">Chargement…</div>
           ) : (
             <>
+                      <strong>{screening.distinct_sanction_clients ?? screening.sanction_clients ?? "—"}</strong>
               <div className="rp-hero">
                 <div>
                   <p className="eyebrow">SYNTHÈSE API</p>
@@ -112,13 +116,13 @@ export default function Rapports({ user, onLogout }) {
                     <li>
                       Caisses :{" "}
                       <strong>
-                        {network.caisse_count ?? network.caisses ?? "—"}
+                        {network.caisses_count ?? network.caisse_count ?? network.caisses ?? "—"}
                       </strong>
                     </li>
                     <li>
                       Agences :{" "}
                       <strong>
-                        {network.agency_count ?? network.agencies ?? "—"}
+                        {network.agencies_count ?? network.agency_count ?? network.agencies ?? "—"}
                       </strong>
                     </li>
                   </ul>
@@ -139,11 +143,16 @@ export default function Rapports({ user, onLogout }) {
                       <strong>{screening.matches_found ?? "—"}</strong>
                     </li>
                     <li>
-                      PEP : <strong>{screening.pep_clients ?? "—"}</strong>
+                      PEP :{" "}
+                      <strong>
+                        {screening.distinct_pep_clients ?? screening.pep_clients ?? "—"}
+                      </strong>
                     </li>
                     <li>
                       Sanctions :{" "}
-                      <strong>{screening.sanction_clients ?? "—"}</strong>
+                      <strong>
+                        {screening.distinct_sanction_clients ?? screening.sanction_clients ?? "—"}
+                      </strong>
                     </li>
                   </ul>
                 </article>

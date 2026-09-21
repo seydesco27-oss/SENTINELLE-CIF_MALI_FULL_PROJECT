@@ -137,7 +137,7 @@ export default function ClientDetail({ user, onLogout }) {
       <div className="app-main">
         <DemoRail />
 
-        <div className="client-detail-content">
+        <section className="page-frame client-360">
           {/* Fil d'ariane */}
           <div className="breadcrumb">
             <a
@@ -695,7 +695,7 @@ export default function ClientDetail({ user, onLogout }) {
 
             </>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

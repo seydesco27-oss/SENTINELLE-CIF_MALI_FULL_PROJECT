@@ -28,6 +28,7 @@ export default function Login() {
         } else {
           localStorage.removeItem("keepSession");
         }
+        window.dispatchEvent(new Event("sentinelle-auth-changed"));
         navigate("/dashboard", { replace: true });
       } else {
         setError(res.message || "Connexion impossible.");
