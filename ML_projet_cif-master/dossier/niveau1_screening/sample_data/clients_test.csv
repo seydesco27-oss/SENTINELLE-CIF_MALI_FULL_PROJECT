@@ -1,0 +1,11 @@
+client_name,cas_teste
+Amadou Traore Diallo,correspondance exacte
+Amadou Traoré Diallo,accents differents
+Traore Diallo Amadou,ordre nom/prenom inverse
+Amadou Traor Diallo,faute de frappe (lettre manquante)
+Fatou Kone Sangare,alias raccourci proche
+GTS SARL,alias entreprise
+Ibrahim Ould Cheik,faute de frappe leger
+Seydou Diakite Ouattara,aucune correspondance attendue
+Kadiatou Sanogo Fofana,aucune correspondance attendue
+Moussa Konat Keita,faute de frappe entite proche

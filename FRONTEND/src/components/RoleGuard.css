@@ -1,0 +1,98 @@
+/* Écran accès refusé — sobre, institutionnel, pas de gradient gadget */
+.role-denied {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background: #f1f4f9;
+}
+
+.role-denied-card {
+  width: min(440px, 100%);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 36px 32px 32px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+  text-align: center;
+}
+
+.role-denied-icon {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 18px;
+  border-radius: 12px;
+  background: #fef2f2;
+  color: #b91c1c;
+  display: grid;
+  place-items: center;
+  border: 1px solid #fecaca;
+}
+
+.role-denied-eyebrow {
+  margin: 0 0 8px;
+  font: 600 10px/1.2 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  color: #b91c1c;
+}
+
+.role-denied-card h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.role-denied-body {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.role-denied-body strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.role-denied-code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.role-denied-body code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #334155;
+}
+
+.role-denied-hint {
+  margin: 0 0 22px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.role-denied-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.role-denied-cta:hover {
+  background: #1d4ed8;
+}

@@ -1,0 +1,91 @@
+==============================================================================
+ENTRAINEMENT NIVEAU 2 - DONNÉES AMLSIM (IBM Research)
+==============================================================================
+
+DISTRIBUTION DES CLASSES (split par CLIENT, sans fuite)
+==============================================================================
+Dataset complet : 56194 transactions, 6000 clients
+  - Classe 0 (normal)  : 56065 (99.77%)
+  - Classe 1 (risqué)  : 129 (0.23%)
+
+CV set (80% clients)  : 45555 transactions, 4800 clients
+  - Classe 0  : 45446 (99.76%)
+  - Classe 1  : 109 (0.24%)
+
+Holdout test (20% clients)  : 10639 transactions, 1200 clients
+  - Classe 0  : 10619 (99.81%)
+  - Classe 1  : 20 (0.19%)
+
+Clients partagés CV/holdout : 0 (attendu : 0)
+
+==============================================================================
+VALIDATION CROISÉE (K-FOLD PAR CLIENT, k=5)
+==============================================================================
+  Fold 1: Train=36444 tx (3843 clients), Val=9111 tx (957 clients)
+    -> Accuracy=96.61%, AUC-ROC=0.937, AUC-PR=0.263
+  Fold 2: Train=36444 tx (3840 clients), Val=9111 tx (960 clients)
+    -> Accuracy=95.91%, AUC-ROC=0.979, AUC-PR=0.136
+  Fold 3: Train=36444 tx (3840 clients), Val=9111 tx (960 clients)
+    -> Accuracy=96.97%, AUC-ROC=0.976, AUC-PR=0.074
+  Fold 4: Train=36443 tx (3837 clients), Val=9112 tx (963 clients)
+    -> Accuracy=96.99%, AUC-ROC=0.908, AUC-PR=0.087
+  Fold 5: Train=36445 tx (3840 clients), Val=9110 tx (960 clients)
+    -> Accuracy=96.95%, AUC-ROC=0.980, AUC-PR=0.057
+
+------------------------------------------------------------------------------
+Résultats moyens CV :
+  Accuracy    : 96.69% ± 0.41%
+  AUC-ROC     : 0.956 ± 0.029
+  AUC-PR      : 0.124 ± 0.075
+
+==============================================================================
+MODELE FINAL (ENTRAINÉ SUR TOUT LE CV SET)
+==============================================================================
+
+AUC-ROC test holdout : 0.924
+AUC-PR test holdout  : 0.106
+
+Rapport de classification holdout test (en %) :
+- Accuracy : 96.32%
+- Classe False : precision=99.95%, recall=96.36%, f1-score=98.12%, support=10619
+- Classe True : precision=3.73%, recall=75.00%, f1-score=7.11%, support=20
+- macro avg : precision=51.84%, recall=85.68%, f1-score=52.61%
+- weighted avg : precision=99.77%, recall=96.32%, f1-score=97.95%
+
+Matrice de confusion :
+             Pred=0    Pred=1
+Actual=0      10232       387
+Actual=1          5        15
+
+Interprétation :
+- Vrais négatifs (TN)    : 10232
+- Faux positifs (FP)     : 387
+- Faux négatifs (FN)     : 5
+- Vrais positifs (TP)    : 15
+
+==============================================================================
+IMPORTANCE DES FEATURES
+==============================================================================
+Total de features après encoding: 13
+
+Top 15 features par importance (indices) :
+   1. Feature_10: 43.97%
+   2. Feature_0: 21.22%
+   3. Feature_1: 12.60%
+   4. Feature_2: 7.38%
+   5. Feature_6: 3.31%
+   6. Feature_7: 3.24%
+   7. Feature_5: 2.78%
+   8. Feature_9: 2.67%
+   9. Feature_8: 2.60%
+  10. Feature_4: 0.24%
+  11. Feature_12: 0.00%
+  12. Feature_11: 0.00%
+  13. Feature_3: 0.00%
+
+Mapping (premières features = numeric_features):
+  - log_amount
+  - amount_ratio_to_client_median
+  - amount_zscore
+  - client_age_days
+  - is_weekend

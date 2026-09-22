@@ -1,0 +1,239 @@
+.alert-detail-content {
+  padding: 20px 28px;
+}
+
+/* --- Fil d'ariane --- */
+.breadcrumb {
+  font-size: 12.5px;
+  color: #8a93ab;
+  margin-bottom: 14px;
+}
+.breadcrumb a {
+  color: #8a93ab;
+  text-decoration: none;
+}
+.breadcrumb-sep { margin: 0 6px; color: #c3cadd; }
+.breadcrumb-current { color: #0b1a33; font-weight: 600; }
+
+/* --- Carte en-tête de l'alerte --- */
+.alert-header-card {
+  background: #fff;
+  border: 1px solid #e4e8f2;
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.alert-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.alert-code {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8a93ab;
+  letter-spacing: 0.04em;
+}
+
+.alert-header-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.alert-header-card h1 {
+  font-size: 20px;
+  margin: 6px 0 4px;
+  color: #0b1a33;
+}
+
+.alert-header-meta {
+  font-size: 12.5px;
+  color: #5c6a8a;
+  margin-bottom: 14px;
+}
+
+.alert-chain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chain-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.chain-pill-alert { background: #fdecec; color: #b3261e; }
+.chain-pill-transaction { background: #fdf1e2; color: #a15c1a; }
+.chain-pill-client { background: #e6edff; color: #1a4fd6; }
+.chain-arrow { color: #c3cadd; font-size: 13px; }
+
+/* --- Onglets --- */
+.tabs-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #e4e8f2;
+  margin-bottom: 18px;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #8a93ab;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-btn-active {
+  color: #1a4fd6;
+  border-bottom-color: #1a4fd6;
+}
+
+/* --- Grille résumé : 2 colonnes égales, côte à côte --- */
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e4e8f2;
+  border-radius: 8px;
+  padding: 16px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.panel-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #8a93ab;
+  margin-bottom: 12px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid #f2f4f9;
+  font-size: 13px;
+}
+.summary-row:last-child { border-bottom: none; }
+
+.summary-label { color: #5c6a8a; }
+.summary-value { color: #0b1a33; font-weight: 600; }
+.summary-value-score { color: #e8843a; font-size: 15px; font-weight: 700; }
+
+.reason-text {
+  font-size: 13px;
+  color: #0b1a33;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.source-box {
+  background: #f4f6fb;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.source-label { font-size: 10px; color: #8a93ab; font-weight: 700; margin-bottom: 2px; }
+.source-value { font-size: 12.5px; color: #0b1a33; font-weight: 600; }
+
+/* --- Tableau des évaluations de risque --- */
+.risk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  table-layout: fixed;
+}
+.risk-table th:nth-child(1), .risk-table td:nth-child(1) { width: 28%; }
+.risk-table th:nth-child(2), .risk-table td:nth-child(2) { width: 18%; }
+.risk-table th:nth-child(3), .risk-table td:nth-child(3) { width: 24%; }
+.risk-table th:nth-child(4), .risk-table td:nth-child(4) { width: 30%; }
+
+.risk-table th {
+  text-align: left;
+  font-size: 10.5px;
+  color: #8a93ab;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eef1f8;
+}
+.risk-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #f2f4f9;
+  text-align: left;
+}
+.cell-strong { font-weight: 600; color: #0b1a33; }
+.cell-sub { font-size: 11.5px; color: #8a93ab; }
+
+/* --- Badges priorité / statut (mêmes styles que dashboard) --- */
+.badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 10px;
+  display: inline-block;
+  white-space: nowrap;
+}
+.badge-priority-critical { background: #fdecec; color: #b3261e; }
+.badge-priority-high { background: #fdf1e2; color: #a15c1a; }
+.badge-priority-medium { background: #fdf6dc; color: #8a6d10; }
+.badge-status-open { background: #e6edff; color: #1a4fd6; }
+.badge-status-closed { background: #eaf7ee; color: #2e7d46; }
+.badge-status-en_analyse { background: #fdf6dc; color: #8a6d10; }
+
+/* --- Pastille de niveau de risque (● Élevé) --- */
+.risk-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+}
+.risk-dot-circle {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.risk-dot-critical { background: #fdecec; color: #b3261e; }
+.risk-dot-critical .risk-dot-circle { background: #b3261e; }
+.risk-dot-high { background: #fdf1e2; color: #a15c1a; }
+.risk-dot-high .risk-dot-circle { background: #a15c1a; }
+.risk-dot-medium { background: #fdf6dc; color: #8a6d10; }
+.risk-dot-medium .risk-dot-circle { background: #8a6d10; }
+.risk-dot-low { background: #eaf7ee; color: #2e7d46; }
+.risk-dot-low .risk-dot-circle { background: #2e7d46; }
+
+.tab-placeholder {
+  color: #8a93ab;
+  font-size: 13px;
+  text-align: center;
+  padding: 40px 20px;
+}
+/* Sentinelle Assist layout */
+.assist-split {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 14px;
+  align-items: start;
+  margin-top: 8px;
+}
+@media (max-width: 960px) {
+  .assist-split {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,36 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Installed dependencies and build output
+node_modules/
+vendor/
+.venv/
+dist/
+build/
+
+# Python cache and local tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Logs and local databases
+*.log
+*.sqlite
+*.sqlite3
+
+# IDE and operating-system files
+.vscode/
+.idea/
+*.code-workspace
+Thumbs.db
+Desktop.ini
+
+# Local test artifacts
+.coverage
+htmlcov/
+
+# Local reference documents
+tdr-appel-a-candidatures-global-hackathon-cif-digicoop-wa-2026.pdf

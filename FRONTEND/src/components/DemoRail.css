@@ -1,0 +1,90 @@
+.demo-rail {
+  position: sticky;
+  z-index: 15;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 0 0 14px;
+  padding: 9px 16px;
+  border-bottom: 1px solid #dbe1f5;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.07);
+}
+
+.demo-rail > div:first-child {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 9px;
+  align-items: baseline;
+  flex: 1;
+}
+
+.demo-rail span {
+  color: #1a4fd6;
+  font: 700 10px "JetBrains Mono", monospace;
+  letter-spacing: 0.06em;
+}
+
+.demo-rail strong {
+  color: #0b1a33;
+  font-size: 12px;
+}
+
+.demo-rail p {
+  grid-column: 2;
+  margin: 1px 0 0;
+  color: #5c6a8a;
+  font-size: 11px;
+}
+
+.demo-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.demo-actions button {
+  height: 29px;
+  padding: 0 9px;
+  border: 1px solid #dbe1f5;
+  background: #fff;
+  color: #5c6a8a;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.demo-actions .primary {
+  border-color: #1a4fd6;
+  background: #1a4fd6;
+  color: #fff;
+}
+
+.demo-actions .close {
+  border-color: transparent;
+  color: #8a93ab;
+}
+
+@media (max-width: 760px) {
+  .demo-rail {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .demo-rail > div:first-child {
+    display: block;
+  }
+  .demo-rail strong,
+  .demo-rail p {
+    display: block;
+    margin: 3px 0 0;
+  }
+  .demo-actions {
+    width: 100%;
+  }
+  .demo-actions .primary {
+    margin-left: auto;
+  }
+}

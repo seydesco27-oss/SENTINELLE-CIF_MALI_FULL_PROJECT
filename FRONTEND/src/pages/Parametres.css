@@ -1,0 +1,94 @@
+.param-page {
+  --border: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+  --accent-text: #1e40af;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
+  padding: 24px 28px 48px;
+  max-width: 960px;
+}
+.param-page .page-heading { margin-bottom: 22px; }
+.param-page .eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent-text);
+  font: 600 10px/1.2 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: .12em;
+}
+.param-page .page-heading h1 {
+  margin: 0;
+  font-size: 26px;
+  color: var(--text-primary);
+  letter-spacing: -.03em;
+}
+.param-page .page-heading p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.param-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.param-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+}
+.param-card-wide { grid-column: 1 / -1; }
+.param-card-title {
+  font-size: 10px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  letter-spacing: .08em;
+  margin-bottom: 14px;
+}
+.param-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #edf1f5;
+}
+.param-row:last-of-type { border-bottom: none; }
+.param-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.param-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: right;
+}
+.param-mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+.param-ok { color: #15803d; }
+.param-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+.param-logout {
+  margin-top: 14px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+@media (max-width: 720px) {
+  .param-grid { grid-template-columns: 1fr; }
+  .param-card-wide { grid-column: auto; }
+}
