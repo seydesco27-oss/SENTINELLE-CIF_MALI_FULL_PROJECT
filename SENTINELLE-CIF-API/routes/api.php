@@ -30,6 +30,8 @@ use App\Http\Controllers\Api\ScreeningController;
 use App\Http\Controllers\Api\ReportsController;
 use App\Http\Controllers\Api\MlAssistController;
 use App\Http\Controllers\Api\MlScoreController;
+ use App\Http\Controllers\Api\ClientComplianceController;
+ use App\Http\Controllers\Api\AccountMandateController;
 
 
 
@@ -153,7 +155,50 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         'show'
     ]);
 
-       
+
+
+// --- COMPLIANCE (mandats, PEP/RCA, KYC, moyennes, CENTIF assessments) ---
+
+Route::get('/clients/{id}/compliance/summary', [
+    ClientComplianceController::class,
+    'summary',
+]);
+
+Route::get('/clients/{id}/compliance/pep-rca', [
+    ClientComplianceController::class,
+    'pepRca',
+]);
+
+Route::get('/clients/{id}/compliance/kyc', [
+    ClientComplianceController::class,
+    'kyc',
+]);
+
+Route::get('/clients/{id}/compliance/averages', [
+    ClientComplianceController::class,
+    'averages',
+]);
+
+Route::get('/clients/{id}/compliance/mandates', [
+    ClientComplianceController::class,
+    'mandates',
+]);
+
+Route::get('/clients/{id}/compliance/assessments', [
+    ClientComplianceController::class,
+    'assessments',
+]);
+
+Route::get('/clients/{id}/compliance/network-links', [
+    ClientComplianceController::class,
+    'networkLinks',
+]);
+
+Route::get('/accounts/{id}/mandates', [
+    AccountMandateController::class,
+    'index',
+]);
+
 
     /*
     |--------------------------------------------------------------------------
@@ -164,6 +209,16 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/accounts', [
         AccountController::class,
         'index'
+    ]);
+
+    Route::post('/accounts', [
+        AccountController::class,
+        'store'
+    ]);
+
+    Route::get('/accounts/managers', [
+        AccountController::class,
+        'managers'
     ]);
 
     Route::get('/accounts/{id}', [
@@ -465,6 +520,11 @@ Route::post('/ml/chat', [MlAssistController::class, 'chat']);
 Route::get('/ml/health', [MlScoreController::class, 'health']);
 Route::post('/ml/score', [MlScoreController::class, 'score']);
 
+
+Route::get('/clients/{id}/compliance/dual-risk', [
+    ClientComplianceController::class,
+    'dualRisk',
+]);
 
 
 });

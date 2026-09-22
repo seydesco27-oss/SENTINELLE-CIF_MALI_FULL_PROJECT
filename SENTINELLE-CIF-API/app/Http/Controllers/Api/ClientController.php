@@ -389,7 +389,7 @@ class ClientController extends Controller
     public function store(Request $request): JsonResponse
     {
         try {
-            $clientType = strtoupper(trim((string) $request->input('client_type')));
+            $clientType = strtoupper(trim((string) $request->input('client_type', 'INDIVIDUAL')));
 
             if (!in_array($clientType, ['INDIVIDUAL', 'ENTITY'], true)) {
                 return response()->json([
@@ -410,7 +410,6 @@ class ClientController extends Controller
             }
 
             $phone = trim((string) $request->input('phone'));
-
             if ($phone === '') {
                 return response()->json([
                     'success' => false,
@@ -418,6 +417,13 @@ class ClientController extends Controller
                 ], 422);
             }
 
+            /*
+             |--------------------------------------------------------------------------
+             | PERSONNE PHYSIQUE — procédure métier sp_client_onboard_individual
+             |--------------------------------------------------------------------------
+             | Centralise : KYC level, documents, reviews, screening optionnel.
+             | Évite la duplication de règles entre API et SQL.
+             */
             if ($clientType === 'INDIVIDUAL') {
                 $firstName = trim((string) $request->input('first_name'));
                 $lastName = trim((string) $request->input('last_name'));
@@ -428,105 +434,199 @@ class ClientController extends Controller
                         'message' => 'first_name et last_name sont obligatoires pour une personne physique.',
                     ], 422);
                 }
-            } else {
-                $legalName = trim((string) $request->input('legal_name'));
 
-                if ($legalName === '') {
+                // Génération numéro client si non fourni
+                $clientNumber = trim((string) $request->input('client_number'));
+                if ($clientNumber === '') {
+                    $prefix = 'CLI-IND-';
+                    $clientNumber = null;
+                    for ($attempt = 0; $attempt < 8; $attempt++) {
+                        $candidate = $prefix . str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT);
+                        if (!DB::table('clients')->where('client_number', $candidate)->exists()) {
+                            $clientNumber = $candidate;
+                            break;
+                        }
+                    }
+                    if ($clientNumber === null) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Impossible de générer un client_number unique.',
+                        ], 500);
+                    }
+                }
+
+                $runScreening = $request->boolean('run_screening', true) ? 1 : 0;
+
+                DB::select(
+                    'CALL sp_client_onboard_individual(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @p_client_id, @p_status, @p_message)',
+                    [
+                        $agencyId,
+                        $clientNumber,
+                        $phone,
+                        $request->input('email'),
+                        $firstName,
+                        $lastName,
+                        $request->input('gender'),
+                        $request->input('birth_date'),
+                        $request->input('place_of_birth'),
+                        $request->input('nationality'),
+                        $request->input('nina'),
+                        $request->input('marital_status'),
+                        $request->input('profession'),
+                        $request->input('activity_sector'),
+                        $request->input('declared_income'),
+                        $request->input('income_source'),
+                        $request->input('employer_name'),
+                        $request->input('photo_path'),
+                        $request->input('address_country'),
+                        $request->input('address_city'),
+                        $request->input('address_text'),
+                        $request->input('doc_type'),
+                        $request->input('doc_number'),
+                        $request->input('doc_issue_date'),
+                        $request->input('doc_expiry_date'),
+                        $request->input('doc_path'),
+                        $request->boolean('is_pep') ? 1 : 0,
+                        $request->boolean('is_rca') ? 1 : 0,
+                        $request->input('rca_note'),
+                        $runScreening,
+                    ]
+                );
+
+                $out = DB::selectOne('SELECT @p_client_id AS client_id, @p_status AS status, @p_message AS message');
+
+                if (!$out || strtoupper((string) $out->status) !== 'SUCCESS') {
                     return response()->json([
                         'success' => false,
-                        'message' => 'legal_name est obligatoire pour une personne morale.',
+                        'message' => $out->message ?? 'Échec onboarding client.',
+                        'status' => $out->status ?? 'ERROR',
                     ], 422);
                 }
+
+                $clientId = (int) $out->client_id;
+
+                $client = DB::table('clients as c')
+                    ->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
+                    ->leftJoin('risk_levels as rl', 'rl.id', '=', 'c.risk_level_id')
+                    ->where('c.id', $clientId)
+                    ->select([
+                        'c.id', 'c.client_number', 'c.client_type', 'c.status',
+                        'c.phone', 'c.email', 'c.is_pep', 'c.is_rca',
+                        'c.kyc_status', 'c.kyc_completed_at',
+                        'c.risk_score', 'rl.code as risk_level',
+                        'c.agency_id',
+                        'ci.first_name', 'ci.last_name', 'ci.nina', 'ci.profession',
+                    ])
+                    ->first();
+
+                $screeningCount = DB::table('screenings')->where('client_id', $clientId)->count();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $out->message,
+                    'data' => [
+                        'client' => $client,
+                        'screening_run' => (bool) $runScreening,
+                        'screening_count' => $screeningCount,
+                        'onboarding_stage' => DB::table('v_client_onboarding_status')
+                            ->where('client_id', $clientId)
+                            ->value('onboarding_stage'),
+                    ],
+                ], 201);
             }
 
             /*
-             * Génération du numéro client.
-             *
-             * Format : CLI-IND-XXXXXX ou CLI-ENT-XXXXXX
-             * On vérifie l'unicité par boucle courte plutôt que de
-             * verrouiller une séquence globale.
+             |--------------------------------------------------------------------------
+             | PERSONNE MORALE — insert contrôlé (pas de procédure dédiée en BD)
+             |--------------------------------------------------------------------------
              */
-            $prefix = $clientType === 'INDIVIDUAL' ? 'CLI-IND-' : 'CLI-ENT-';
-            $clientNumber = null;
+            $legalName = trim((string) $request->input('legal_name'));
+            if ($legalName === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'legal_name est obligatoire pour une personne morale.',
+                ], 422);
+            }
 
-            for ($attempt = 0; $attempt < 5; $attempt++) {
-                $candidate = $prefix . strtoupper(Str::random(6));
-
-                if (!DB::table('clients')->where('client_number', $candidate)->exists()) {
-                    $clientNumber = $candidate;
-                    break;
+            $prefix = 'CLI-ENT-';
+            $clientNumber = trim((string) $request->input('client_number'));
+            if ($clientNumber === '') {
+                $clientNumber = null;
+                for ($attempt = 0; $attempt < 8; $attempt++) {
+                    $candidate = $prefix . str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT);
+                    if (!DB::table('clients')->where('client_number', $candidate)->exists()) {
+                        $clientNumber = $candidate;
+                        break;
+                    }
+                }
+                if ($clientNumber === null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Impossible de générer un client_number unique.',
+                    ], 500);
                 }
             }
 
-            if ($clientNumber === null) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Impossible de générer un numéro client unique, réessayez.',
-                ], 500);
-            }
+            $clientId = DB::transaction(function () use ($request, $agencyId, $clientNumber, $phone, $legalName) {
+                $riskLow = DB::table('risk_levels')->where('code', 'LOW')->value('id');
 
-            $clientId = DB::transaction(function () use (
-                $request,
-                $clientType,
-                $agencyId,
-                $phone,
-                $clientNumber
-            ) {
-                $clientId = DB::table('clients')->insertGetId([
+                $id = DB::table('clients')->insertGetId([
                     'client_number' => $clientNumber,
-                    'client_type' => $clientType,
+                    'client_type' => 'ENTITY',
                     'status' => 'ACTIVE',
                     'phone' => $phone,
                     'email' => $request->input('email'),
-                    'is_pep' => (bool) $request->boolean('is_pep', false),
+                    'is_pep' => $request->boolean('is_pep') ? 1 : 0,
+                    'is_rca' => $request->boolean('is_rca') ? 1 : 0,
+                    'risk_level_id' => $riskLow,
                     'risk_score' => 0,
                     'agency_id' => $agencyId,
+                    'kyc_status' => 'PENDING',
                     'created_at' => now(),
                 ]);
 
-                if ($clientType === 'INDIVIDUAL') {
-                    DB::table('client_individuals')->insert([
-                        'client_id' => $clientId,
-                        'first_name' => trim((string) $request->input('first_name')),
-                        'last_name' => trim((string) $request->input('last_name')),
-                        'gender' => $request->input('gender'),
-                        'birth_date' => $request->input('birth_date'),
-                        'nationality' => $request->input('nationality'),
-                        'profession' => $request->input('profession'),
-                        'activity_sector' => $request->input('activity_sector'),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                } else {
-                    DB::table('client_entities')->insert([
-                        'client_id' => $clientId,
-                        'legal_name' => trim((string) $request->input('legal_name')),
-                        'entity_type' => $request->input('entity_type'),
-                        'registration_number' => $request->input('registration_number'),
-                        'tax_identification_number' => $request->input('tax_identification_number'),
-                        'registration_country' => $request->input('registration_country'),
-                        'nationality' => $request->input('nationality'),
-                        'activity_sector' => $request->input('activity_sector'),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
+                DB::table('client_entities')->insert([
+                    'client_id' => $id,
+                    'legal_name' => $legalName,
+                    'entity_type' => $request->input('entity_type'),
+                    'registration_number' => $request->input('registration_number'),
+                    'tax_identification_number' => $request->input('tax_identification_number'),
+                    'registration_country' => $request->input('registration_country'),
+                    'nationality' => $request->input('nationality'),
+                    'activity_sector' => $request->input('activity_sector'),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
 
-                return $clientId;
+                return $id;
             });
+
+            if ($request->boolean('run_screening', true)) {
+                try {
+                    DB::select('CALL sp_screen_client(?, ?)', [$clientId, 0]);
+                } catch (\Throwable $e) {
+                    // screening non bloquant
+                }
+            }
+
+            $client = DB::table('clients as c')
+                ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
+                ->where('c.id', $clientId)
+                ->select(['c.*', 'ce.legal_name', 'ce.entity_type'])
+                ->first();
 
             return response()->json([
                 'success' => true,
+                'message' => 'Client personne morale créé.',
                 'data' => [
-                    'id' => $clientId,
-                    'client_number' => $clientNumber,
-                    'client_type' => $clientType,
-                    'status' => 'ACTIVE',
+                    'client' => $client,
+                    'onboarding_stage' => DB::table('v_client_onboarding_status')
+                        ->where('client_id', $clientId)
+                        ->value('onboarding_stage'),
                 ],
             ], 201);
 
         } catch (Throwable $e) {
-
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la création du client.',
@@ -535,19 +635,6 @@ class ClientController extends Controller
         }
     }
 
-    /**
-     * ============================================================
-     * MISE À JOUR D'UN CLIENT
-     * ============================================================
-     *
-     * PUT /api/v1/clients/{id}
-     *
-     * Corps attendu : mêmes champs que la création, tous optionnels
-     * (seuls les champs présents sont modifiés). client_type et
-     * agency_id ne sont volontairement pas modifiables ici — un
-     * changement de type ou de rattachement est une opération
-     * distincte, pas une simple mise à jour de fiche.
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         try {

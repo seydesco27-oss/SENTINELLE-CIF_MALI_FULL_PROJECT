@@ -20,17 +20,24 @@ class Account extends Model
         'currency',
         'status',
         'opened_at',
+        'account_manager_id',
     ];
 
     protected $casts = [
         'opening_balance' => 'decimal:2',
         'current_balance' => 'decimal:2',
         'opened_at' => 'date',
+        'account_manager_id' => 'integer',
     ];
 
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class, 'client_id');
+    }
+
+    public function manager(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'account_manager_id');
     }
 
     public function transactions(): HasMany

@@ -1039,14 +1039,17 @@ class TransactionController extends Controller
                 ], 422);
             }
 
-            $agencyId = (int) $request->input('agency_id');
-
-            if ($agencyId <= 0 || !DB::table('agencies')->where('id', $agencyId)->exists()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Agence invalide.',
-                    'error' => 'agency_id doit référencer une agence existante.',
-                ], 422);
+            $agencyId = $request->filled('agency_id') ? (int) $request->input('agency_id') : null;
+            if ($agencyId !== null && $agencyId > 0) {
+                if (!DB::table('agencies')->where('id', $agencyId)->exists()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Agence invalide.',
+                        'error' => 'agency_id doit référencer une agence existante.',
+                    ], 422);
+                }
+            } else {
+                $agencyId = null; // procédure déduira depuis le client
             }
 
             $allowedTypes = ['DEPOSIT', 'PAYMENT', 'TRANSFER_IN', 'TRANSFER_OUT', 'WITHDRAWAL'];
@@ -1061,7 +1064,6 @@ class TransactionController extends Controller
             }
 
             $amount = (float) $request->input('amount');
-
             if ($amount <= 0) {
                 return response()->json([
                     'success' => false,
@@ -1070,55 +1072,66 @@ class TransactionController extends Controller
                 ], 422);
             }
 
-            /*
-             * Référence unique.
-             *
-             * Format : TRX-<année>-<8 caractères aléatoires>
-             */
-            $reference = null;
-
-            for ($attempt = 0; $attempt < 5; $attempt++) {
-                $candidate = 'TRX-' . now()->format('Y') . '-' . strtoupper(Str::random(8));
-
-                if (!DB::table('transactions')->where('transaction_reference', $candidate)->exists()) {
-                    $reference = $candidate;
-                    break;
+            // Référence unique si non fournie
+            $reference = trim((string) $request->input('transaction_reference'));
+            if ($reference === '') {
+                $reference = null;
+                for ($attempt = 0; $attempt < 5; $attempt++) {
+                    $candidate = 'TRX-' . now()->format('Y') . '-' . strtoupper(\Illuminate\Support\Str::random(8));
+                    if (!DB::table('transactions')->where('transaction_reference', $candidate)->exists()) {
+                        $reference = $candidate;
+                        break;
+                    }
+                }
+                if ($reference === null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Impossible de générer une transaction_reference unique.',
+                    ], 500);
                 }
             }
 
-            if ($reference === null) {
+            /*
+             |--------------------------------------------------------------------------
+             | Enregistrement via sp_transaction_register
+             |--------------------------------------------------------------------------
+             | Valide compte ACTIVE, insère, déclenche AML silencieux.
+             | Point unique métier — cohérent avec triggers + sp_aml_*.
+             */
+            DB::select(
+                'CALL sp_transaction_register(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @p_transaction_id, @p_status, @p_message)',
+                [
+                    $accountId,
+                    $reference,
+                    $transactionType,
+                    $amount,
+                    $request->input('currency', 'XOF'),
+                    $request->input('channel'),
+                    $request->input('country', 'ML'),
+                    $request->input('transaction_date'), // null → NOW() côté proc
+                    $agencyId,
+                    $request->input('initiated_by_type'),
+                    $request->input('initiated_by_mandate_id'),
+                    $request->input('initiated_by_client_id'),
+                    $request->input('counterpart_account_id'),
+                    $request->input('counterpart_client_id'),
+                    $request->input('counterpart_name'),
+                ]
+            );
+
+            $out = DB::selectOne('SELECT @p_transaction_id AS transaction_id, @p_status AS status, @p_message AS message');
+
+            if (!$out || strtoupper((string) $out->status) !== 'SUCCESS') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Impossible de générer une référence unique, réessayez.',
-                ], 500);
+                    'message' => $out->message ?? 'Échec enregistrement transaction.',
+                    'status' => $out->status ?? 'ERROR',
+                ], 422);
             }
 
-            /*
-             * Un seul INSERT : les triggers font le reste
-             * (solde du compte + évaluation AML) de façon
-             * synchrone, avant que insertGetId() ne retourne.
-             */
-            $transactionId = DB::table('transactions')->insertGetId([
-                'transaction_reference' => $reference,
-                'account_id' => $accountId,
-                'transaction_type' => $transactionType,
-                'amount' => $amount,
-                'currency' => $request->input('currency', 'XOF'),
-                'channel' => $request->input('channel'),
-                'country_from' => $request->input('country_from'),
-                'country_to' => $request->input('country_to'),
-                'country' => $request->input('country'),
-                'transaction_date' => now(),
-                'transaction_status' => 'COMPLETED',
-                'agency_id' => $agencyId,
-                'created_at' => now(),
-            ]);
+            $transactionId = (int) $out->transaction_id;
 
-            /*
-             * Lecture du résultat déjà produit par les triggers —
-             * aucun nouveau calcul déclenché ici.
-             */
-            $account = DB::table('accounts')->where('id', $accountId)->first(['id', 'current_balance']);
+            $account = DB::table('accounts')->where('id', $accountId)->first(['id', 'current_balance', 'account_number']);
 
             $ruleExecutions = DB::table('rule_executions')
                 ->where('transaction_id', $transactionId)
@@ -1133,12 +1146,17 @@ class TransactionController extends Controller
                 ->where('transaction_id', $transactionId)
                 ->get(['id', 'reference', 'priority', 'status', 'final_score', 'title']);
 
+            $tx = DB::table('transactions')->where('id', $transactionId)->first();
+
             return response()->json([
                 'success' => true,
+                'message' => $out->message,
                 'data' => [
                     'id' => $transactionId,
-                    'transaction_reference' => $reference,
+                    'transaction_reference' => $tx->transaction_reference ?? $reference,
+                    'transaction' => $tx,
                     'account_current_balance' => $account->current_balance ?? null,
+                    'account_number' => $account->account_number ?? null,
                     'rule_executions_count' => $ruleExecutions,
                     'risk_assessments' => $riskAssessments,
                     'alerts' => $alerts,
@@ -1146,7 +1164,6 @@ class TransactionController extends Controller
             ], 201);
 
         } catch (Throwable $e) {
-
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de l’enregistrement de la transaction.',
@@ -1154,5 +1171,6 @@ class TransactionController extends Controller
             ], 500);
         }
     }
+
 
 }
