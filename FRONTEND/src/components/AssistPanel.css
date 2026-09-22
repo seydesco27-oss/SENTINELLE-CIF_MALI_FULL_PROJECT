@@ -1,0 +1,353 @@
+/* ===== Sentinelle Assist — tiroir droit repliable ===== */
+
+.assist-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 999px;
+  background: #1e40af;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(30, 64, 175, 0.35);
+  cursor: pointer;
+}
+.assist-fab:hover {
+  background: #1d4ed8;
+}
+.assist-fab-icon {
+  font-size: 16px;
+}
+
+.assist-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.25);
+  z-index: 1290;
+}
+
+.assist-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 1300;
+  width: min(400px, 100vw);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-left: 1px solid #e2e8f0;
+  box-shadow: -8px 0 32px rgba(15, 23, 42, 0.12);
+  transform: translateX(105%);
+  transition: transform 0.22s ease;
+}
+.assist-drawer.is-open {
+  transform: translateX(0);
+}
+
+.assist-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.assist-eyebrow {
+  margin: 0 0 4px;
+  font: 600 10px/1.2 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  color: #1e40af;
+}
+.assist-drawer-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #0f172a;
+}
+.assist-drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.assist-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.assist-close {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  color: #475569;
+}
+.assist-close:hover {
+  background: #f1f5f9;
+}
+
+.assist-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px 20px;
+}
+
+.assist-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.assist-btn {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.assist-btn:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #eef2ff;
+  color: #1e40af;
+}
+.assist-btn.primary {
+  background: #1e40af;
+  border-color: #1e40af;
+  color: #fff;
+}
+.assist-btn.primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+.assist-btn.small {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+.assist-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.assist-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.assist-conversation {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.assist-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f8fbff, #eef4ff);
+}
+.assist-suggestions span {
+  width: 100%;
+  margin-bottom: 2px;
+  color: #64748b;
+  font: 700 10px/1.2 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.assist-suggestions button {
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.assist-suggestions button:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+.assist-message {
+  max-width: 92%;
+  padding: 11px 12px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px 12px 12px 4px;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  box-shadow: 0 2px 7px rgba(15, 23, 42, .04);
+}
+.assist-message.is-user {
+  justify-self: end;
+  border-radius: 12px 12px 4px 12px;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border-color: #bfdbfe;
+}
+.assist-message span {
+  display: block;
+  margin-bottom: 3px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.assist-message p {
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.58;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.assist-ml-box {
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.assist-ml-box h4 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  color: #4338ca;
+  text-transform: uppercase;
+}
+.assist-ml-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.assist-ml-grid span {
+  display: block;
+  font-size: 10px;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+.assist-ml-grid strong {
+  font-size: 16px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: #0f172a;
+}
+
+.assist-body section {
+  margin-bottom: 14px;
+}
+.assist-body h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+.assist-summary,
+.assist-draft {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.assist-factors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.assist-factors li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1f5;
+  font-size: 12px;
+  color: #475569;
+}
+.assist-factors strong {
+  color: #0f172a;
+  text-align: right;
+}
+.assist-questions {
+  margin: 0;
+  padding-left: 18px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.assist-questions li {
+  margin-bottom: 6px;
+}
+.assist-draft-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.assist-draft-head h4 {
+  margin: 0;
+}
+.assist-disclaimer {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+  font-style: italic;
+}
+.assist-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+.assist-chatbar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.assist-chatbar input {
+  flex: 1;
+  height: 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.assist-chatbar input:focus {
+  outline: none;
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.35);
+}

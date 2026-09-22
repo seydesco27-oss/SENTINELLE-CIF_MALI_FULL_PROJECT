@@ -1,0 +1,100 @@
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  border-bottom: 1px solid #e4e8f2;
+  padding: 10px 24px;
+  font-family: "Inter", sans-serif;
+}
+
+.topbar-breadcrumb {
+  font-size: 12.5px;
+  color: #8a93ab;
+  display: flex;
+  align-items: center;
+}
+.topbar-crumb-sep { margin: 0 6px; color: #c3cadd; }
+.topbar-crumb-current { color: #0b1a33; font-weight: 600; }
+
+.topbar-actions { display: flex; align-items: center; gap: 14px; }
+
+.topbar-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f4f6fb;
+  border: 1px solid #e4e8f2;
+  border-radius: 6px;
+  padding: 6px 10px;
+  width: 280px;
+}
+.topbar-search-icon { color: #8a93ab; font-size: 13px; }
+.topbar-search input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12.5px;
+  width: 100%;
+  color: #0b1a33;
+}
+
+.topbar-icon-btn {
+  position: relative;
+  background: none;
+  border: none;
+  font-size: 15px;
+  cursor: pointer;
+}
+.topbar-notif-dot {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 8px;
+}
+
+.topbar-user {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.topbar-user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #1a4fd6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.topbar-user-name { font-size: 12.5px; font-weight: 600; color: #0b1a33; }
+.topbar-user-caret { font-size: 10px; color: #8a93ab; }
+
+.topbar-user-menu {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e4e8f2;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  min-width: 190px;
+  z-index: 20;
+}
+.topbar-user-menu-item {
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: #0b1a33;
+}
+.topbar-user-menu-item:hover { background: #f4f6fb; }
+.topbar-user-menu-danger { color: #b3261e; }
