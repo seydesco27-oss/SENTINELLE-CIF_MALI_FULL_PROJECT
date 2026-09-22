@@ -10,17 +10,15 @@ class TestUserSeeder extends Seeder
 {
     public function run(): void
     {
-        DB::table('users')->updateOrInsert(
-            [
+        if (! DB::table('users')->where('username', 'admin.test')->exists()) {
+            DB::table('users')->insert([
                 'username' => 'admin.test',
-            ],
-            [
                 'agency_id' => null,
                 'role_id' => null,
                 'password_hash' => Hash::make('DigiAML@2026'),
                 'created_at' => now(),
-            ]
-        );
+            ]);
+        }
 
         $this->command->info('Utilisateur de test disponible.');
         $this->command->info('Username : admin.test');

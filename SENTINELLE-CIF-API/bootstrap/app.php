@@ -20,6 +20,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
         ]);
 
+        // L'application est une API : une session expirée doit produire un
+        // JSON 401, jamais tenter une redirection vers une route web /login.
+        $middleware->redirectGuestsTo(null);
+
         // Normalisation uniforme des réponses JSON de l'API sans modifier
         // la logique métier des contrôleurs ni les vues/procédures SQL.
         $middleware->append(NormalizeApiJson::class);

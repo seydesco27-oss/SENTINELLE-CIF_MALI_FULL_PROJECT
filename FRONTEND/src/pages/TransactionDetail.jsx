@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import DemoRail from "../components/DemoRail";
 import { getTransactionDetail } from "../services/api";
+import { canAccess } from "../auth/access";
 import "./TransactionDetail.css";
 
 function RiskPill({ level, score }) {
@@ -120,6 +121,7 @@ export default function TransactionDetail({ user, onLogout }) {
   const [payload, setPayload] = useState(null);
   const [decision, setDecision] = useState("");
   const [comment, setComment] = useState("");
+  const canViewAnalysis = canAccess(user, "risk_analysis");
 
   useEffect(() => {
     let cancelled = false;
@@ -218,7 +220,9 @@ export default function TransactionDetail({ user, onLogout }) {
               <header className="profile-header">
                 <div>
                   <p className="eyebrow">
-                    DOSSIER D&apos;ANALYSE TRANSACTIONNELLE / AML
+                    {canViewAnalysis
+                      ? "DOSSIER D’ANALYSE TRANSACTIONNELLE / AML"
+                      : "CONSULTATION TRANSACTIONNELLE"}
                   </p>
                   <h1>
                     {txn.transaction_reference || txn.reference || `TX-${txn.id}`}
@@ -227,21 +231,21 @@ export default function TransactionDetail({ user, onLogout }) {
                     <span className="mono">
                       {formatAmount(txn.amount, txn.currency)}
                     </span>
-                    <RiskPill level={riskLevel} score={score} />
+                    {canViewAnalysis && <RiskPill level={riskLevel} score={score} />}
                     <StatusPill status={txn.transaction_status || txn.status} />
                   </div>
                 </div>
-                <div className="profile-score">
+                {canViewAnalysis && <div className="profile-score">
                   <span>SCORE AML DÉTERMINISTE</span>
                   <strong>
                     {score != null ? Number(score).toFixed(0) : "—"}
                   </strong>
                   <small>/ 100</small>
-                </div>
+                </div>}
               </header>
 
               {/* Chemin d'analyse Figma */}
-              <div className="analysis-path">
+              {canViewAnalysis && <div className="analysis-path">
                 <div>
                   <span>TRANSACTION</span>
                   <strong>{transactionTypeLabel(txn.transaction_type || txn.type)}</strong>
@@ -278,7 +282,7 @@ export default function TransactionDetail({ user, onLogout }) {
                   <span>DÉCISION</span>
                   <strong>Analyste humain</strong>
                 </div>
-              </div>
+              </div>}
 
               {/* 01 */}
               <section className="dossier-section">
@@ -352,6 +356,7 @@ export default function TransactionDetail({ user, onLogout }) {
                 </div>
               </section>
 
+              {canViewAnalysis && <>
               {/* 03 AML — ancre démo */}
               <section id="aml" className="dossier-section">
                 <Title
@@ -592,6 +597,7 @@ export default function TransactionDetail({ user, onLogout }) {
                   </div>
                 </div>
               </section>
+              </>}
             </>
           )}
         </section>

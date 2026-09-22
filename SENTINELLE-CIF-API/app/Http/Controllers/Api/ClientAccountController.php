@@ -3,16 +3,20 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class ClientAccountController extends Controller
 {
-    public function index(int $id): JsonResponse
+    public function index(Request $request, int $id): JsonResponse
     {
         try {
-            $client = DB::table('clients')->where('id', $id)->first();
+            $clientQuery = DB::table('clients')->where('id', $id);
+            AgencyAccess::constrain($clientQuery, $request, 'agency_id');
+            $client = $clientQuery->first();
             if (!$client) {
                 return response()->json(['success' => false, 'message' => 'Client introuvable.', 'client_id' => $id], 404);
             }

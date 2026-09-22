@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -12,13 +14,13 @@ class ClientActivityController extends Controller
     /**
      * Transactions d'un client.
      */
-    public function transactions(int $id): JsonResponse
+    public function transactions(Request $request, int $id): JsonResponse
     {
         try {
 
-            $clientExists = DB::table('clients')
-                ->where('id', $id)
-                ->exists();
+            $clientQuery = DB::table('clients')->where('id', $id);
+            AgencyAccess::constrain($clientQuery, $request, 'agency_id');
+            $clientExists = $clientQuery->exists();
 
             if (!$clientExists) {
                 return response()->json([

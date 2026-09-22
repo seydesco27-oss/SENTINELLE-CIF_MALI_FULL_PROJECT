@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { getDashboardSummary } from "../services/api";
+import {
+  canAccess,
+  getUserDisplayName,
+  getUserInitials,
+  getWorkspaceLabel,
+} from "../auth/access";
 import "./Sidebar.css";
 
 /** Logo bouclier SENTINELLE — contrat Figma (protection + data) */
@@ -140,34 +146,34 @@ const NAV_SECTIONS = [
   {
     label: "SUPERVISION",
     items: [
-      { to: "/dashboard", label: "Tableau de bord", icon: "dashboard" },
-      { to: "/agences", label: "Réseau caisses/agences", icon: "network" },
-      { to: "/alertes", label: "Alertes", icon: "alert", badgeKey: "open_alerts" },
-      { to: "/investigations", label: "Investigations", icon: "investigation" },
-      { to: "/centif", label: "Déclarations CENTIF", icon: "centif" },
+      { to: "/dashboard", label: "Tableau de bord", icon: "dashboard", permission: "dashboard" },
+      { to: "/agences", label: "Réseau caisses/agences", icon: "network", permission: "network" },
+      { to: "/alertes", label: "Alertes", icon: "alert", badgeKey: "open_alerts", permission: "alerts" },
+      { to: "/investigations", label: "Investigations", icon: "investigation", permission: "investigations" },
+      { to: "/centif", label: "Déclarations CENTIF", icon: "centif", permission: "centif" },
     ],
   },
   {
     label: "DONNÉES",
     items: [
-      { to: "/clients", label: "Clients", icon: "clients" },
-      { to: "/comptes", label: "Comptes", icon: "accounts" },
-      { to: "/transactions", label: "Transactions", icon: "transactions" },
+      { to: "/clients", label: "Clients", icon: "clients", permission: "clients" },
+      { to: "/comptes", label: "Comptes", icon: "accounts", permission: "accounts" },
+      { to: "/transactions", label: "Transactions", icon: "transactions", permission: "transactions" },
     ],
   },
   {
     label: "ANALYSE",
     items: [
-      { to: "/screening", label: "Screening PEP/Sanctions", icon: "screening" },
-      { to: "/analyse-risque", label: "Analyse & Risque", icon: "risk" },
-      { to: "/ml", label: "Intelligence ML", icon: "ml" },
-      { to: "/rapports", label: "Rapports", icon: "reports" },
-      { to: "/audit", label: "Journal d'audit", icon: "audit" },
+      { to: "/screening", label: "Screening PEP/Sanctions", icon: "screening", permission: "screening" },
+      { to: "/analyse-risque", label: "Analyse & Risque", icon: "risk", permission: "risk_analysis" },
+      { to: "/ml", label: "Intelligence ML", icon: "ml", permission: "ml" },
+      { to: "/rapports", label: "Rapports", icon: "reports", permission: "reports" },
+      { to: "/audit", label: "Journal d'audit", icon: "audit", permission: "audit" },
     ],
   },
   {
     label: "SYSTÈME",
-    items: [{ to: "/parametres", label: "Paramètres", icon: "settings" }],
+    items: [{ to: "/parametres", label: "Mon compte", icon: "settings", permission: "settings" }],
   },
 ];
 
@@ -184,6 +190,10 @@ export default function Sidebar({ user, onLogout }) {
   });
 
   useEffect(() => {
+    if (!canAccess(user, "alerts")) {
+      return undefined;
+    }
+
     let cancelled = false;
     async function loadBadge() {
       try {
@@ -203,7 +213,12 @@ export default function Sidebar({ user, onLogout }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user]);
+
+  const visibleSections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => canAccess(user, item.permission)),
+  })).filter((section) => section.items.length > 0);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -271,7 +286,7 @@ export default function Sidebar({ user, onLogout }) {
       </div>
 
       <nav className="sidebar-nav">
-        {NAV_SECTIONS.map((section) => (
+        {visibleSections.map((section) => (
           <div className="sidebar-section" key={section.label}>
             <div className="sidebar-section-label">{section.label}</div>
             {section.items.map((item) => {
@@ -307,17 +322,15 @@ export default function Sidebar({ user, onLogout }) {
         </div>
         <div className="sidebar-user">
           <div className="sidebar-user-avatar">
-            {(user?.username || "AC").slice(0, 2).toUpperCase()}
+            {getUserInitials(user)}
           </div>
           <div className="sidebar-user-meta">
-            <div className="sidebar-user-name">{user?.username || "—"}</div>
+            <div className="sidebar-user-name">{getUserDisplayName(user)}</div>
             <div className="sidebar-user-role">
-              {user?.role?.description ||
-                user?.role?.name ||
-                user?.role ||
-                "Analyste conformité"}
+              {user?.job_title || user?.profile?.job_title || user?.role?.name || user?.role || getWorkspaceLabel(user)}
               {user?.agency?.city ? ` · ${user.agency.city}` : ""}
             </div>
+            <div className="sidebar-user-scope">{getWorkspaceLabel(user)}</div>
           </div>
         </div>
         <button type="button" className="sidebar-logout" onClick={onLogout} title="Déconnexion">

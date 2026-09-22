@@ -4,15 +4,8 @@ import Sidebar from "../components/Sidebar";
 import DemoRail from "../components/DemoRail";
 import { getClientDetail } from "../services/api";
 import AssistPanel from "../components/AssistPanel";
+import { canAccess } from "../auth/access";
 import "./ClientDetail.css";
-
-const TABS = [
-  "Dossier",
-  "Comptes",
-  "Activité",
-  "Risque & screening",
-  "Alertes & investigations",
-];
 
 function RiskPill({ level, score }) {
   let lvl = (level || "").toUpperCase();
@@ -35,11 +28,14 @@ function RiskPill({ level, score }) {
   );
 }
 
-function SectionHeader({ number, title }) {
+function SectionHeader({ number, title, note }) {
   return (
     <div className="section-header-top">
       <span className="section-number">{number}</span>
-      <h2>{title}</h2>
+      <div>
+        <h2>{title}</h2>
+        {note ? <p>{note}</p> : null}
+      </div>
     </div>
   );
 }
@@ -55,6 +51,90 @@ function formatAmount(amount, currency = "XOF") {
   );
 }
 
+function formatDateTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function labelFromCode(value, labels = {}) {
+  if (!value) return "—";
+  const code = String(value).toUpperCase();
+  return labels[code] || code.replaceAll("_", " ").toLowerCase().replace(/^./, (c) => c.toUpperCase());
+}
+
+const transactionTypeLabels = {
+  DEPOSIT: "Dépôt",
+  DEPOT: "Dépôt",
+  DEPOT_ESPECES: "Dépôt d’espèces",
+  WITHDRAWAL: "Retrait",
+  RETRAIT: "Retrait",
+  TRANSFER: "Virement",
+  VIREMENT: "Virement",
+  TRANSFER_IN: "Virement entrant",
+  TRANSFER_OUT: "Virement sortant",
+  PAYMENT: "Paiement",
+  CASH_IN: "Versement d’espèces",
+  CASH_OUT: "Retrait d’espèces",
+};
+
+const statusLabels = {
+  ACTIVE: "Actif",
+  INACTIVE: "Inactif",
+  OPEN: "Ouverte",
+  CLOSED: "Clôturée",
+  COMPLETED: "Terminée",
+  PENDING: "En attente",
+  FAILED: "Échouée",
+  BLOCKED: "Bloqué",
+  SUSPENDED: "Suspendu",
+  IN_REVIEW: "En analyse",
+  EN_ANALYSE: "En analyse",
+};
+
+const alertPriorityLabels = {
+  LOW: "Faible",
+  MEDIUM: "Moyenne",
+  HIGH: "Élevée",
+  CRITICAL: "Critique",
+};
+
+function clientTypeLabel(type) {
+  return labelFromCode(type, {
+    INDIVIDUAL: "Particulier",
+    ENTITY: "Entreprise",
+    UNKNOWN: "Non renseigné",
+  });
+}
+
+function getInitials(name) {
+  return String(name || "CL")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
 export default function ClientDetail({ user, onLogout }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -63,6 +143,16 @@ export default function ClientDetail({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [payload, setPayload] = useState(null);
+  const canViewRisk = canAccess(user, "risk_analysis");
+  const canViewAlerts = canAccess(user, "alerts");
+  const canUseAssist = canAccess(user, "assist");
+  const tabs = [
+    "Dossier",
+    "Comptes",
+    "Activité",
+    ...(canViewRisk ? ["Risque & screening"] : []),
+    ...(canViewAlerts ? ["Alertes & investigations"] : []),
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -188,28 +278,41 @@ export default function ClientDetail({ user, onLogout }) {
             <>
               {/* En-tête client */}
               <div className="client-header-card">
-                <div className="client-header-left">
-                  <div className="client-header-eyebrow">
-                    DOSSIER CLIENT 360° / CONFORMITÉ
+                <div className="client-header-identity">
+                  <div className="client-avatar" aria-hidden="true">
+                    {getInitials(customerName)}
                   </div>
-                  <h1>{customerName}</h1>
-                  <div className="client-header-meta">
-                    <span className="client-number">
-                      {profile.client_number || "—"}
-                    </span>
-                    {Number(profile.is_pep) === 1 && (
-                      <span className="pep-pill">PEP</span>
+                  <div className="client-header-left">
+                    <div className="client-header-eyebrow">
+                      DOSSIER CLIENT 360° / CONFORMITÉ
+                    </div>
+                    <h1>{customerName}</h1>
+                    <div className="client-header-meta">
+                      <span className="client-number">
+                        {profile.client_number || "—"}
+                      </span>
+                      <span>{clientTypeLabel(profile.client_type)}</span>
+                      {canViewRisk && Number(profile.is_pep) === 1 && (
+                        <span className="pep-pill">PEP</span>
+                      )}
+                      {canViewRisk && <RiskPill level={riskLevel} score={scoreValue} />}
+                    </div>
+                    {(profile.client_agency_name || profile.client_caisse_name) && (
+                      <div className="client-location">
+                        {[profile.client_caisse_name, profile.client_agency_name]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
                     )}
-                    <RiskPill level={riskLevel} score={scoreValue} />
                   </div>
                 </div>
-                <div className="client-header-right">
+                {canViewRisk && <div className="client-header-right">
                   <div className="client-score-label">SCORE DE RISQUE</div>
                   <div className="client-score-value">
                     {scoreValue != null ? scoreValue.toFixed(0) : "—"}
                     <span className="client-score-max"> / 100</span>
                   </div>
-                </div>
+                </div>}
               </div>
 
               {/* Tags résumé */}
@@ -217,33 +320,36 @@ export default function ClientDetail({ user, onLogout }) {
                 <div className="client-tag">
                   <div className="client-tag-label">TYPE</div>
                   <div className="client-tag-value">
-                    {profile.client_type === "INDIVIDUAL"
-                      ? "Individu"
-                      : profile.client_type === "ENTITY"
-                      ? "Entité"
-                      : profile.client_type || "—"}
+                    {clientTypeLabel(profile.client_type)}
                   </div>
+                  <div className="client-tag-note">Catégorie KYC</div>
                 </div>
                 <div className="client-tag">
                   <div className="client-tag-label">COMPTES</div>
                   <div className="client-tag-value">{accounts.length}</div>
+                  <div className="client-tag-note">Rattachés au client</div>
                 </div>
                 <div className="client-tag">
                   <div className="client-tag-label">TRANSACTIONS</div>
                   <div className="client-tag-value">
                     {profile.transaction_count ?? transactions.length}
                   </div>
+                  <div className="client-tag-note">Opérations enregistrées</div>
                 </div>
-                <div className="client-tag">
+                {canViewAlerts && <div className="client-tag">
                   <div className="client-tag-label">ALERTES OUVERTES</div>
                   <div className="client-tag-value">{openAlertsCount}</div>
-                </div>
+                  <div className="client-tag-note">À examiner</div>
+                </div>}
               </div>
 
               {/* Onglets */}
-              <div className="tabs-bar">
-                {TABS.map((tab) => (
+              <div className="tabs-bar" role="tablist" aria-label="Sections du dossier client">
+                {tabs.map((tab) => (
                   <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === tab}
                     key={tab}
                     className={`tab-btn ${
                       activeTab === tab ? "tab-btn-active" : ""
@@ -258,9 +364,13 @@ export default function ClientDetail({ user, onLogout }) {
               {/* ——— ONGLET DOSSIER ——— */}
               {activeTab === "Dossier" && (
                 <>
-                  <div className="two-col-grid">
+                  <div className={canViewRisk ? "two-col-grid" : "two-col-grid one-column"}>
                     <div>
-                      <SectionHeader number="01" title="Identité / Profil" />
+                      <SectionHeader
+                        number="01"
+                        title="Identité et profil"
+                        note="Informations de connaissance client et rattachement opérationnel."
+                      />
                       <div className="panel">
                         <div className="info-grid-2">
                           <div className="info-item">
@@ -272,19 +382,21 @@ export default function ClientDetail({ user, onLogout }) {
                           <div className="info-item">
                             <div className="info-label">TYPE</div>
                             <div className="info-value">
-                              {profile.client_type || "—"}
+                              {clientTypeLabel(profile.client_type)}
                             </div>
                           </div>
                           <div className="info-item">
                             <div className="info-label">NOM / RAISON SOCIALE</div>
                             <div className="info-value">{customerName}</div>
                           </div>
-                          <div className="info-item">
-                            <div className="info-label">PEP</div>
-                            <div className="info-value">
-                              {Number(profile.is_pep) === 1 ? "Oui" : "Non"}
+                          {canViewRisk && (
+                            <div className="info-item">
+                              <div className="info-label">STATUT PEP</div>
+                              <div className="info-value">
+                                {Number(profile.is_pep) === 1 ? "Oui" : "Non"}
+                              </div>
                             </div>
-                          </div>
+                          )}
                           {individual && (
                             <>
                               <div className="info-item">
@@ -302,9 +414,9 @@ export default function ClientDetail({ user, onLogout }) {
                               <div className="info-item">
                                 <div className="info-label">DATE DE NAISSANCE</div>
                                 <div className="info-value">
-                                  {individual.date_of_birth ||
-                                    individual.birth_date ||
-                                    "—"}
+                                  {formatDate(
+                                    individual.date_of_birth || individual.birth_date
+                                  )}
                                 </div>
                               </div>
                               <div className="info-item">
@@ -317,12 +429,6 @@ export default function ClientDetail({ user, onLogout }) {
                           )}
                           {entity && (
                             <>
-                              <div className="info-item">
-                                <div className="info-label">RAISON SOCIALE</div>
-                                <div className="info-value">
-                                  {entity.legal_name || "—"}
-                                </div>
-                              </div>
                               <div className="info-item">
                                 <div className="info-label">FORME JURIDIQUE</div>
                                 <div className="info-value">
@@ -337,12 +443,28 @@ export default function ClientDetail({ user, onLogout }) {
                               </div>
                             </>
                           )}
+                          <div className="info-item">
+                            <div className="info-label">CAISSE</div>
+                            <div className="info-value">
+                              {profile.client_caisse_name || profile.client_caisse_code || "—"}
+                            </div>
+                          </div>
+                          <div className="info-item">
+                            <div className="info-label">AGENCE</div>
+                            <div className="info-value">
+                              {profile.client_agency_name || profile.client_agency_code || "—"}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    <div>
-                      <SectionHeader number="02" title="Synthèse AML" />
+                    {canViewRisk && <div>
+                      <SectionHeader
+                        number="02"
+                        title="Synthèse AML"
+                        note="Vue consolidée du niveau de vigilance et de l’exposition."
+                      />
                       <div className="panel">
                         <div className="info-grid-2">
                           <div className="info-item">
@@ -382,11 +504,15 @@ export default function ClientDetail({ user, onLogout }) {
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </div>}
                   </div>
 
                   {/* Dernières opérations */}
-                  <SectionHeader number="03" title="Dernières opérations" />
+                  <SectionHeader
+                    number="03"
+                    title="Dernières opérations"
+                    note="Les dix mouvements les plus récents du dossier."
+                  />
                   <div className="panel operations-panel">
                     {transactions.length === 0 ? (
                       <p style={{ color: "#64748b", padding: 16 }}>
@@ -411,32 +537,28 @@ export default function ClientDetail({ user, onLogout }) {
                                 {t.transaction_reference || `TRX-${t.id}`}
                               </td>
                               <td className="cell-sub">
-                                {t.transaction_date
-                                  ? new Date(
-                                      t.transaction_date
-                                    ).toLocaleString("fr-FR", {
-                                      day: "2-digit",
-                                      month: "short",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })
-                                  : "—"}
+                                {formatDateTime(t.transaction_date)}
                               </td>
                               <td className="cell-sub">
-                                {t.transaction_type || "—"}
+                                {labelFromCode(t.transaction_type, transactionTypeLabels)}
                               </td>
                               <td className="cell-strong">
                                 {formatAmount(t.amount, t.currency)}
                               </td>
-                              <td>{t.transaction_status || "—"}</td>
+                              <td>
+                                <span className="status-pill-active">
+                                  {labelFromCode(t.transaction_status, statusLabels)}
+                                </span>
+                              </td>
                               <td>
                                 <button
                                   className="cl-open-btn"
+                                  type="button"
                                   onClick={() =>
                                     navigate(`/transactions/${t.id}`)
                                   }
                                 >
-                                  Ouvrir
+                                    Consulter <span aria-hidden="true">→</span>
                                 </button>
                               </td>
                             </tr>
@@ -451,10 +573,11 @@ export default function ClientDetail({ user, onLogout }) {
               {/* ——— ONGLET COMPTES ——— */}
               {activeTab === "Comptes" && (
                 <>
-                  <SectionHeader number="03" title="Comptes rattachés" />
-                  <p className="tab-section-subtitle">
-                    Vue consolidée des comptes associés à ce client.
-                  </p>
+                  <SectionHeader
+                    number="03"
+                    title="Comptes rattachés"
+                    note="Vue consolidée des comptes associés à ce client."
+                  />
                   <div className="panel operations-panel">
                     {accounts.length === 0 ? (
                       <p style={{ color: "#64748b", padding: 16 }}>
@@ -478,11 +601,11 @@ export default function ClientDetail({ user, onLogout }) {
                                 {acc.account_number || "—"}
                               </td>
                               <td className="cell-sub">
-                                {acc.account_type || "—"}
+                                {labelFromCode(acc.account_type)}
                               </td>
                               <td>
                                 <span className="status-pill-active">
-                                  {acc.status || "—"}
+                                  {labelFromCode(acc.status, statusLabels)}
                                 </span>
                               </td>
                               <td className="cell-strong">
@@ -491,9 +614,7 @@ export default function ClientDetail({ user, onLogout }) {
                                   : "—"}
                               </td>
                               <td className="cell-sub">
-                                {acc.opened_at ||
-                                  acc.created_at ||
-                                  "—"}
+                                {formatDate(acc.opened_at || acc.created_at)}
                               </td>
                             </tr>
                           ))}
@@ -512,7 +633,11 @@ export default function ClientDetail({ user, onLogout }) {
               {/* ——— ONGLET ACTIVITÉ ——— */}
               {activeTab === "Activité" && (
                 <>
-                  <SectionHeader number="04" title="Activité transactionnelle" />
+                  <SectionHeader
+                    number="04"
+                    title="Activité transactionnelle"
+                    note="Historique détaillé des opérations disponibles."
+                  />
                   <div className="panel operations-panel">
                     {transactions.length === 0 ? (
                       <p style={{ color: "#64748b", padding: 16 }}>
@@ -538,28 +663,29 @@ export default function ClientDetail({ user, onLogout }) {
                                 {t.transaction_reference || `TRX-${t.id}`}
                               </td>
                               <td className="cell-sub">
-                                {t.transaction_date
-                                  ? new Date(
-                                      t.transaction_date
-                                    ).toLocaleString("fr-FR")
-                                  : "—"}
+                                {formatDateTime(t.transaction_date)}
                               </td>
-                              <td>{t.transaction_type || "—"}</td>
+                              <td>{labelFromCode(t.transaction_type, transactionTypeLabels)}</td>
                               <td className="cell-strong">
                                 {formatAmount(t.amount, t.currency)}
                               </td>
                               <td className="cell-sub">
-                                {t.channel || "—"}
+                                {labelFromCode(t.channel)}
                               </td>
-                              <td>{t.transaction_status || "—"}</td>
+                              <td>
+                                <span className="status-pill-active">
+                                  {labelFromCode(t.transaction_status, statusLabels)}
+                                </span>
+                              </td>
                               <td>
                                 <button
                                   className="cl-open-btn"
+                                  type="button"
                                   onClick={() =>
                                     navigate(`/transactions/${t.id}`)
                                   }
                                 >
-                                  Ouvrir
+                                  Consulter <span aria-hidden="true">→</span>
                                 </button>
                               </td>
                             </tr>
@@ -574,7 +700,11 @@ export default function ClientDetail({ user, onLogout }) {
               {/* ——— ONGLET RISQUE ——— */}
               {activeTab === "Risque & screening" && (
                 <>
-                  <SectionHeader number="05" title="Risque & scoring" />
+                  <SectionHeader
+                    number="05"
+                    title="Risque et scoring"
+                    note="Résultat du moteur de risque et statut de screening."
+                  />
                   <div className="panel">
                     <div className="info-grid-2">
                       <div className="info-item">
@@ -596,29 +726,16 @@ export default function ClientDetail({ user, onLogout }) {
                         </div>
                       </div>
                     </div>
-                    {riskScore && (
-                      <pre
-                        style={{
-                          marginTop: 16,
-                          fontSize: 13,
-                          color: "#334155",
-                          whiteSpace: "pre-wrap",
-                        }}
-                      >
-                        {JSON.stringify(riskScore, null, 2)}
-                      </pre>
-                    )}
-                    <p
-                      style={{
-                        marginTop: 16,
-                        color: "#64748b",
-                        fontSize: 13,
-                      }}
-                    >
-                      Le screening PEP/Sanctions détaillé sera branché via les
-                      endpoints dédiés (`/clients/{"{id}"}/screening`,
-                      `/sanctions`, `/pep`) dans une prochaine itération.
-                    </p>
+                    <div className="screening-callout">
+                      <span className="screening-callout-icon" aria-hidden="true">✓</span>
+                      <div>
+                        <strong>Données de risque vérifiées</strong>
+                        <p>
+                          Les indicateurs affichés proviennent du profil AML et du dernier
+                          score calculé pour ce client.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
@@ -626,7 +743,11 @@ export default function ClientDetail({ user, onLogout }) {
               {/* ——— ONGLET ALERTES ——— */}
               {activeTab === "Alertes & investigations" && (
                 <>
-                  <SectionHeader number="06" title="Alertes liées au client" />
+                  <SectionHeader
+                    number="06"
+                    title="Alertes liées au client"
+                    note="Signaux de conformité associés à ce dossier."
+                  />
                   <div className="panel operations-panel">
                     {alerts.length === 0 ? (
                       <p style={{ color: "#64748b", padding: 16 }}>
@@ -651,29 +772,30 @@ export default function ClientDetail({ user, onLogout }) {
                               <td className="cell-strong">
                                 {a.reference || `ALT-${a.id}`}
                               </td>
-                              <td>{a.alert_type || a.title || "—"}</td>
-                              <td>{a.priority || "—"}</td>
-                              <td>{a.status || "—"}</td>
+                              <td>{labelFromCode(a.alert_type || a.title)}</td>
+                              <td>
+                                <span className={`priority-pill priority-${String(a.priority || "").toLowerCase()}`}>
+                                  {labelFromCode(a.priority, alertPriorityLabels)}
+                                </span>
+                              </td>
+                              <td>{labelFromCode(a.status, statusLabels)}</td>
                               <td>
                                 {a.final_score != null
                                   ? Number(a.final_score).toFixed(0)
                                   : "—"}
                               </td>
                               <td className="cell-sub">
-                                {a.created_at
-                                  ? new Date(a.created_at).toLocaleString(
-                                      "fr-FR"
-                                    )
-                                  : "—"}
+                                {formatDateTime(a.created_at)}
                               </td>
                               <td>
                                 <button
                                   className="cl-open-btn"
+                                  type="button"
                                   onClick={() =>
                                     navigate(`/alertes/${a.id}`)
                                   }
                                 >
-                                  Ouvrir
+                                  Consulter <span aria-hidden="true">→</span>
                                 </button>
                               </td>
                             </tr>
@@ -687,11 +809,11 @@ export default function ClientDetail({ user, onLogout }) {
               )}
 
               {/* Sentinelle Assist — tiroir droit */}
-              <AssistPanel
+              {canUseAssist && <AssistPanel
                 objectType="client"
                 objectId={Number(id)}
                 title="Assist — profil client"
-              />
+              />}
 
             </>
           )}

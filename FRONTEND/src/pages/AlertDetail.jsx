@@ -2,604 +2,313 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import DemoRail from "../components/DemoRail";
-import { getAlertDetail } from "../services/api";
 import AssistPanel from "../components/AssistPanel";
+import { getAlertDetail, scoreAlertWithMl } from "../services/api";
 import "./AlertDetail.css";
 
-const PRIORITY_LABEL = {
-  CRITICAL: "Critique",
-  HIGH: "Élevée",
-  MEDIUM: "Moyenne",
-  LOW: "Faible",
-};
-
+const PRIORITY_LABEL = { CRITICAL: "Critique", HIGH: "Élevée", MEDIUM: "Moyenne", LOW: "Faible" };
 const STATUS_LABEL = {
-  OPEN: "Ouverte",
-  OUVERTE: "Ouverte",
-  IN_REVIEW: "En analyse",
-  EN_ANALYSE: "En analyse",
-  CLOSED: "Clôturée",
-  CLOTUREE: "Clôturée",
-  DISMISSED: "Écartée",
-  RESOLVED: "Résolue",
+  OPEN: "Ouverte", OUVERTE: "Ouverte", IN_REVIEW: "En analyse", EN_ANALYSE: "En analyse",
+  CLOSED: "Clôturée", CLOTUREE: "Clôturée", DISMISSED: "Écartée", RESOLVED: "Résolue",
 };
-
-const RISK_LABEL = {
-  CRITICAL: "Critique",
-  HIGH: "Élevé",
-  MEDIUM: "Moyen",
-  LOW: "Faible",
-};
-
+const RISK_LABEL = { CRITICAL: "Critique", HIGH: "Élevé", MEDIUM: "Moyen", LOW: "Faible" };
 const TABS = ["Résumé", "Client", "Transaction", "Risque", "Investigation", "Actions"];
+const FEATURE_LABELS = {
+  montant_log: "Montant de l’opération",
+  ratio_seuil: "Rapport au seuil réglementaire",
+  proche_seuil: "Proximité du seuil",
+  a_destinataire: "Présence d’un destinataire",
+  jour_semaine: "Jour de la semaine",
+  montant_moyen_client: "Montant moyen habituel",
+  montant_std_client: "Dispersion des montants",
+  nb_transactions_client: "Historique du client",
+  nb_destinataires_distincts_client: "Destinataires distincts",
+  montant_zscore: "Écart au comportement habituel",
+  nb_transactions_7j: "Fréquence récente",
+  montant_cumule_7j: "Volume récent",
+  in_degree: "Diversité des flux entrants",
+  out_degree: "Diversité des flux sortants",
+  type_cash_in: "Opération d’encaissement",
+  type_cash_out: "Opération de décaissement",
+  type_transfer: "Opération de transfert",
+  type_other: "Nature de l’opération",
+  type_decaissement_credit: "Décaissement de crédit",
+  type_depot: "Dépôt",
+  type_remboursement_credit: "Remboursement de crédit",
+  type_retrait: "Retrait",
+  type_transfert_entrant: "Transfert entrant",
+  type_transfert_sortant: "Transfert sortant",
+};
 
 function alertTypeLabel(type) {
-  return (
-    {
-      LARGE_AMOUNT: "Montant élevé",
-      STRUCTURING: "Structuration",
-      RAPID_TRANSFER: "Virement rapide",
-      UNUSUAL_VOLUME: "Volume inhabituel",
-      HIGH_RISK_CORRIDOR: "Corridor à risque",
-      AML_RULE_ENGINE: "Moteur de règles",
-    }[type] || type || "Alerte"
-  );
+  return ({
+    LARGE_AMOUNT: "Montant élevé", STRUCTURING: "Structuration", RAPID_TRANSFER: "Virement rapide",
+    UNUSUAL_VOLUME: "Volume inhabituel", HIGH_RISK_CORRIDOR: "Corridor à risque",
+    HIGH_CASH_ACTIVITY: "Forte activité espèces", AML_RULE_ENGINE: "Moteur de règles AML",
+  }[type] || type?.replaceAll("_", " ") || "Alerte AML");
+}
+
+function riskTypeLabel(type) {
+  return ({
+    ML_TRANSACTION_RISK: "Prédiction comportementale ML", HIGH_CASH_ACTIVITY: "Forte activité espèces",
+    UNUSUAL_VOLUME: "Volume inhabituel", STRUCTURING: "Structuration", LARGE_AMOUNT: "Montant élevé",
+  }[type] || type?.replaceAll("_", " ") || "Évaluation AML");
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
+function formatAmount(value, currency = "XOF") {
+  if (value === null || value === undefined || value === "") return "—";
+  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Number(value))} ${currency || "XOF"}`;
+}
+
+function score(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function scoreText(value) {
+  const parsed = score(value);
+  return parsed === null ? "—" : parsed.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
 }
 
 function PriorityBadge({ priority }) {
-  const p = (priority || "").toUpperCase();
-  return (
-    <span className={`badge badge-priority-${p.toLowerCase()}`}>
-      {PRIORITY_LABEL[p] || priority || "—"}
-    </span>
-  );
+  const normalized = (priority || "").toUpperCase();
+  return <span className={`alert-badge alert-priority-${normalized.toLowerCase()}`}>{PRIORITY_LABEL[normalized] || priority || "—"}</span>;
 }
 
 function StatusBadge({ status }) {
-  const s = (status || "").toUpperCase();
+  const normalized = (status || "").toUpperCase();
+  return <span className={`alert-badge alert-status-${normalized.toLowerCase()}`}>{STATUS_LABEL[normalized] || status || "—"}</span>;
+}
+
+function RiskBadge({ level }) {
+  const normalized = (level || "").toUpperCase();
+  return <span className={`risk-badge risk-${normalized.toLowerCase()}`}><span aria-hidden="true" />{RISK_LABEL[normalized] || level || "—"}</span>;
+}
+
+function DetailRow({ label, value, children }) {
+  return <div className="alert-detail-row"><span>{label}</span><strong>{children ?? value ?? "—"}</strong></div>;
+}
+
+function EmptyState({ children }) {
+  return <div className="alert-empty-state">{children}</div>;
+}
+
+function RiskTable({ assessments }) {
+  if (!assessments.length) return <EmptyState>Aucune évaluation de risque associée.</EmptyState>;
   return (
-    <span className={`badge badge-status-${s.toLowerCase()}`}>
-      {STATUS_LABEL[s] || status || "—"}
-    </span>
+    <div className="alert-table-scroll">
+      <table className="alert-data-table alert-risk-table">
+        <thead><tr><th>Évaluation</th><th>Score</th><th>Niveau</th><th>Motif</th><th>Source</th><th>Date</th></tr></thead>
+        <tbody>{assessments.map((assessment) => (
+          <tr key={assessment.id}>
+            <td className="alert-cell-strong">{riskTypeLabel(assessment.risk_type)}</td>
+            <td className="alert-score-cell">{scoreText(assessment.score)}<small>/100</small></td>
+            <td><RiskBadge level={assessment.risk_level} /></td>
+            <td className="alert-reason-cell">{assessment.reason || "—"}</td>
+            <td><span className="alert-source-tag">{assessment.source || "—"}</span></td>
+            <td className="alert-date-cell">{formatDateTime(assessment.created_at)}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
   );
 }
 
-function RiskDot({ level }) {
-  const l = (level || "").toUpperCase();
+function MlAnalysisPanel({ analysis, status, error, onRefresh }) {
+  const factors = analysis?.factors || [];
+  const maxImportance = Math.max(...factors.map((factor) => Number(factor.importance) || 0), 0);
+  const isRunning = status === "scoring";
   return (
-    <span className={`risk-dot risk-dot-${l.toLowerCase()}`}>
-      <span className="risk-dot-circle" />
-      {RISK_LABEL[l] || level || "—"}
-    </span>
+    <section className="alert-panel ml-panel">
+      <div className="alert-section-heading">
+        <div>
+          <span className="alert-eyebrow">INTELLIGENCE ML</span>
+          <h2>Analyse multicouche de l’opération</h2>
+          <p>Le modèle comportemental complète les règles AML et le screening. Le score opérationnel conserve le signal le plus prudent.</p>
+        </div>
+        <div className="ml-heading-actions">
+          <span className={`ml-status ${analysis ? "ml-ready" : isRunning ? "ml-running" : "ml-missing"}`}>
+            <span aria-hidden="true" />{analysis ? "Modèle exécuté" : isRunning ? "Analyse en cours" : "À analyser"}
+          </span>
+          <button className="alert-btn alert-btn-secondary" onClick={onRefresh} disabled={isRunning}>
+            {isRunning ? "Calcul…" : analysis ? "Recalculer" : "Lancer le score ML"}
+          </button>
+        </div>
+      </div>
+      {error && <div className="ml-error">{error}</div>}
+      {analysis ? (
+        <>
+          <div className="ml-score-grid">
+            <div className="ml-score-card ml-operational"><span>Score opérationnel</span><strong>{scoreText(analysis.operational_score)}<small>/100</small></strong><em>Signal retenu pour la priorité</em></div>
+            <div className="ml-score-card"><span>Règles AML</span><strong>{scoreText(analysis.rule_score)}<small>/100</small></strong><em>Scénarios déterministes</em></div>
+            <div className="ml-score-card"><span>Modèle ML</span><strong>{scoreText(analysis.model_score)}<small>/100</small></strong><em>Comportement statistique</em></div>
+            <div className="ml-score-card"><span>Score fusionné</span><strong>{scoreText(analysis.fused_score)}<small>/100</small></strong><em>ML + règles + screening</em></div>
+          </div>
+          <div className="ml-explanation-grid">
+            <div>
+              <h3>Facteurs analysés par le modèle</h3>
+              {factors.length ? <div className="ml-factors">{factors.slice(0, 6).map((factor) => {
+                const importance = Number(factor.importance) || 0;
+                const width = maxImportance > 0 ? Math.max(5, (importance / maxImportance) * 100) : 5;
+                return <div className="ml-factor" key={factor.feature_name}>
+                  <div><span>{FEATURE_LABELS[factor.feature_name] || factor.feature_name?.replaceAll("_", " ")}</span><strong>{factor.feature_value ?? "—"}</strong></div>
+                  <div className="ml-factor-track" aria-label={`Importance relative ${Math.round(width)} %`}><span style={{ width: `${width}%` }} /></div>
+                </div>;
+              })}</div> : <EmptyState>Le score est enregistré, mais aucun facteur explicatif n’a été fourni.</EmptyState>}
+            </div>
+            <aside className="ml-method-card">
+              <span className="alert-eyebrow">MÉTHODE</span><h3>Une décision traçable</h3>
+              <p>La fusion combine le modèle, les règles AML et le screening. Une règle confirmée ne peut pas être abaissée par le modèle.</p>
+              <div className="ml-weights">
+                <span>ML <strong>{Math.round((analysis.weights?.model ?? 0.65) * 100)} %</strong></span>
+                <span>Règles <strong>{Math.round((analysis.weights?.rules ?? 0.2) * 100)} %</strong></span>
+                <span>Screening <strong>{Math.round((analysis.weights?.screening ?? 0.15) * 100)} %</strong></span>
+              </div>
+              <small>Dernière exécution : {formatDateTime(analysis.scored_at)}</small>
+            </aside>
+          </div>
+        </>
+      ) : !isRunning && !error ? <EmptyState>Le modèle sera exécuté automatiquement sur la transaction liée.</EmptyState> : null}
+    </section>
   );
 }
 
 export default function AlertDetail({ user, onLogout }) {
   const { id } = useParams();
   const navigate = useNavigate();
-
   const [activeTab, setActiveTab] = useState("Résumé");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [payload, setPayload] = useState(null);
+  const [mlStatus, setMlStatus] = useState("idle");
+  const [mlError, setMlError] = useState("");
 
   useEffect(() => {
-    let cancelled = false;
-
+    let active = true;
     async function load() {
-      setLoading(true);
-      setError("");
-      setPayload(null);
-
+      setLoading(true); setError(""); setPayload(null); setMlError("");
       try {
-        const res = await getAlertDetail(id);
-        if (cancelled) return;
-
-        if (res?.success && res.data) {
-          setPayload(res.data);
-        } else {
-          setError(res?.message || "Alerte introuvable.");
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err.response?.data?.message ||
-              "Impossible de charger le détail de l’alerte."
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+        const response = await getAlertDetail(id);
+        if (!active) return;
+        if (!response?.success || !response.data) throw new Error(response?.message || "Alerte introuvable.");
+        setPayload(response.data);
+        const needsScore = response.data.alert?.transaction_id && !response.data.ml_analysis;
+        if (needsScore) {
+          setMlStatus("scoring");
+          try {
+            await scoreAlertWithMl(id);
+            const refreshed = await getAlertDetail(id);
+            if (active && refreshed?.success) { setPayload(refreshed.data); setMlStatus("ready"); }
+          } catch (mlFailure) {
+            if (active) {
+              setMlStatus("error");
+              setMlError(mlFailure.response?.data?.error || mlFailure.response?.data?.message || "Le service ML est momentanément indisponible.");
+            }
+          }
+        } else setMlStatus(response.data.ml_analysis ? "ready" : "idle");
+      } catch (loadError) {
+        if (active) setError(loadError.response?.data?.message || loadError.message || "Impossible de charger le détail de l’alerte.");
+      } finally { if (active) setLoading(false); }
     }
-
     if (id) load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { active = false; };
   }, [id]);
+
+  async function refreshMlScore() {
+    setMlStatus("scoring"); setMlError("");
+    try {
+      const result = await scoreAlertWithMl(id);
+      if (!result?.success) throw new Error(result?.message || "Le scoring ML a échoué.");
+      const refreshed = await getAlertDetail(id);
+      if (refreshed?.success) setPayload(refreshed.data);
+      setMlStatus("ready");
+    } catch (mlFailure) {
+      setMlStatus("error");
+      setMlError(mlFailure.response?.data?.error || mlFailure.response?.data?.message || mlFailure.message || "Le service ML est momentanément indisponible.");
+    }
+  }
 
   const alert = payload?.alert || null;
   const actions = payload?.actions || [];
   const investigations = payload?.investigations || [];
   const riskAssessments = payload?.risk_assessments || [];
-  const mainRisk = riskAssessments[0] || null;
+  const mlAnalysis = payload?.ml_analysis || null;
+  const mainRisk = riskAssessments.find((item) => item.source !== "ML_MODEL") || riskAssessments[0] || null;
 
   return (
-    <div className="app-shell">
-      <Sidebar user={user} onLogout={onLogout} />
-
-      <div className="app-main">
-        <DemoRail />
-        <div className="alert-detail-content">
-          {/* Fil d'ariane */}
-          <div className="breadcrumb">
-            <a
-              href="/alertes"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate("/alertes");
-              }}
-            >
-              Alertes
-            </a>
-            <span className="breadcrumb-sep">›</span>
-            <span className="breadcrumb-current">
-              Alerte {alert?.reference || `#${id}`}
-            </span>
-          </div>
-
-          {loading && (
-            <div style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>
-              Chargement du détail de l’alerte…
+    <div className="app-shell"><Sidebar user={user} onLogout={onLogout} /><div className="app-main"><DemoRail />
+      <main className="alert-detail-content">
+        <nav className="alert-breadcrumb" aria-label="Fil d’Ariane"><button type="button" onClick={() => navigate("/alertes")}>Alertes</button><span>›</span><strong>{alert?.reference || `Alerte #${id}`}</strong></nav>
+        {loading && <div className="alert-loading"><span />Chargement du dossier d’alerte…</div>}
+        {error && !loading && <div className="alert-error-state"><strong>Le dossier n’a pas pu être chargé.</strong><p>{error}</p><button className="alert-btn alert-btn-secondary" onClick={() => navigate("/alertes")}>Retour aux alertes</button></div>}
+        {!loading && !error && alert && <>
+          <header className={`alert-hero alert-hero-${String(alert.priority || "low").toLowerCase()}`}>
+            <div className="alert-hero-main">
+              <div className="alert-hero-topline"><span className="alert-reference">{alert.reference || `ALT-${alert.id}`}</span><span className="alert-live-indicator"><i /> Surveillance active</span></div>
+              <h1>{alert.title || alertTypeLabel(alert.alert_type)}</h1>
+              <p>{alert.description || mainRisk?.reason || "Alerte générée par le dispositif de surveillance AML."}</p>
+              <div className="alert-hero-meta"><span>Créée le {formatDateTime(alert.created_at)}</span><span>Transaction {alert.transaction_reference || "non renseignée"}</span><span>Client {alert.client_number || "non renseigné"}</span></div>
             </div>
-          )}
-
-          {error && !loading && (
-            <div
-              style={{
-                background: "#fef2f2",
-                border: "1px solid #fecaca",
-                color: "#b91c1c",
-                padding: "16px",
-                borderRadius: "8px",
-                marginTop: "16px",
-              }}
-            >
-              {error}
-              <div style={{ marginTop: 12 }}>
-                <button className="btn btn-secondary" onClick={() => navigate("/alertes")}>
-                  Retour à la liste
-                </button>
-              </div>
+            <div className="alert-hero-decision">
+              <div className="alert-header-badges"><PriorityBadge priority={alert.priority} /><StatusBadge status={alert.status} /></div>
+              <span className="alert-score-label">Score opérationnel</span><strong className="alert-hero-score">{scoreText(mlAnalysis?.operational_score ?? alert.final_score)}<small>/100</small></strong><span className="alert-score-source">Règles et intelligence ML</span>
             </div>
-          )}
+          </header>
 
-          {!loading && !error && alert && (
-            <>
-              {/* En-tête carte alerte */}
-              <div className="alert-header-card">
-                <div className="alert-header-top">
-                  <span className="alert-code">
-                    {alert.reference || `ALT-${alert.id}`}
-                  </span>
-                  <div className="alert-header-badges">
-                    <PriorityBadge priority={alert.priority} />
-                    <StatusBadge status={alert.status} />
-                  </div>
-                </div>
-                <h1>{alert.title || alertTypeLabel(alert.alert_type)}</h1>
-                <div className="alert-header-meta">
-                  Créée le{" "}
-                  {alert.created_at
-                    ? new Date(alert.created_at).toLocaleDateString("fr-FR", {
-                        day: "2-digit",
-                        month: "long",
-                        year: "numeric",
-                      })
-                    : "—"}
-                  {alert.created_at &&
-                    `, ${new Date(alert.created_at).toLocaleTimeString("fr-FR", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}`}
-                  {alert.final_score != null && (
-                    <> · Score final : <strong>{Number(alert.final_score).toFixed(0)}</strong></>
-                  )}
-                </div>
-                {alert.description && (
-                  <p style={{ marginTop: 12, color: "#475569", lineHeight: 1.5 }}>
-                    {alert.description}
-                  </p>
-                )}
-              </div>
+          <section className="alert-kpis" aria-label="Indicateurs clés">
+            <div className="alert-kpi"><span>Client concerné</span><strong>{alert.client_name || "—"}</strong><small>{alert.client_number || "Référence indisponible"}</small></div>
+            <div className="alert-kpi"><span>Opération analysée</span><strong>{formatAmount(alert.amount, alert.currency)}</strong><small>{alertTypeLabel(alert.transaction_type)}</small></div>
+            <div className="alert-kpi"><span>Signal principal</span><strong>{riskTypeLabel(mainRisk?.risk_type || alert.alert_type)}</strong><small>{mainRisk ? `${scoreText(mainRisk.score)}/100 par ${mainRisk.source || "moteur AML"}` : "À qualifier"}</small></div>
+            <div className="alert-kpi"><span>Modèle ML</span><strong>{mlAnalysis ? `${scoreText(mlAnalysis.model_score)}/100` : mlStatus === "scoring" ? "Calcul…" : "À lancer"}</strong><small>{mlAnalysis ? `Exécuté le ${formatDateTime(mlAnalysis.scored_at)}` : "Analyse comportementale"}</small></div>
+          </section>
 
-              {/* Onglets */}
-              <div className="tabs-bar">
-                {TABS.map((tab) => (
-                  <button
-                    key={tab}
-                    className={`tab-btn ${activeTab === tab ? "tab-active" : ""}`}
-                    onClick={() => setActiveTab(tab)}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
+          <nav className="alert-tabs" role="tablist" aria-label="Sections du dossier">{TABS.map((tab) => <button key={tab} type="button" role="tab" aria-selected={activeTab === tab} className={activeTab === tab ? "is-active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>)}</nav>
 
-              {/* Onglet Résumé */}
-              {activeTab === "Résumé" && (
-                <>
-                  <div className="detail-grid">
-                    <div className="panel">
-                      <div className="panel-eyebrow">SYNTHÈSE</div>
-                      <div className="summary-row">
-                        <span className="summary-label">Type d’alerte</span>
-                        <span className="summary-value">
-                          {alertTypeLabel(alert.alert_type)}
-                        </span>
-                      </div>
-                      <div className="summary-row">
-                        <span className="summary-label">Priorité</span>
-                        <PriorityBadge priority={alert.priority} />
-                      </div>
-                      <div className="summary-row">
-                        <span className="summary-label">Statut</span>
-                        <StatusBadge status={alert.status} />
-                      </div>
-                      <div className="summary-row">
-                        <span className="summary-label">Score final</span>
-                        <span className="summary-value summary-value-score">
-                          {alert.final_score != null
-                            ? Number(alert.final_score).toFixed(0)
-                            : "—"}
-                        </span>
-                      </div>
-                      {mainRisk && (
-                        <>
-                          <div className="summary-row">
-                            <span className="summary-label">Niveau de risque</span>
-                            <RiskDot level={mainRisk.risk_level} />
-                          </div>
-                          <div className="summary-row">
-                            <span className="summary-label">Score évaluation</span>
-                            <span className="summary-value summary-value-score">
-                              {mainRisk.score}
-                            </span>
-                          </div>
-                        </>
-                      )}
-                    </div>
+          {activeTab === "Résumé" && <div className="alert-tab-content">
+            <div className="alert-summary-grid">
+              <section className="alert-panel"><span className="alert-eyebrow">SYNTHÈSE OPÉRATIONNELLE</span><h2>Qualification de l’alerte</h2>
+                <DetailRow label="Scénario" value={alertTypeLabel(alert.alert_type)} /><DetailRow label="Priorité"><PriorityBadge priority={alert.priority} /></DetailRow><DetailRow label="Statut"><StatusBadge status={alert.status} /></DetailRow><DetailRow label="Niveau de risque"><RiskBadge level={mainRisk?.risk_level || alert.priority} /></DetailRow><DetailRow label="Score initial" value={`${scoreText(mainRisk?.score ?? alert.final_score)}/100`} />
+              </section>
+              <section className="alert-panel alert-reason-panel"><span className="alert-eyebrow">SIGNAL DOCUMENTÉ</span><h2>Pourquoi cette alerte ?</h2><p>{mainRisk?.reason || alert.description || "Aucun motif détaillé n’est disponible."}</p>
+                <div className="alert-context-grid"><div><span>Source</span><strong>{mainRisk?.source || "—"}</strong></div><div><span>Canal</span><strong>{alert.channel || "—"}</strong></div><div><span>Origine</span><strong>{alert.country_from || alert.country || "—"}</strong></div><div><span>Destination</span><strong>{alert.country_to || "—"}</strong></div></div>
+              </section>
+            </div>
+            <MlAnalysisPanel analysis={mlAnalysis} status={mlStatus} error={mlError} onRefresh={refreshMlScore} />
+            <section className="alert-panel"><div className="alert-section-heading compact"><div><span className="alert-eyebrow">TRAÇABILITÉ</span><h2>Évaluations de risque</h2></div><span className="alert-count">{riskAssessments.length} évaluation{riskAssessments.length > 1 ? "s" : ""}</span></div><RiskTable assessments={riskAssessments} /></section>
+          </div>}
 
-                    <div className="panel">
-                      <div className="panel-eyebrow">RAISON DOCUMENTÉE</div>
-                      <p className="reason-text">
-                        {mainRisk?.reason ||
-                          alert.description ||
-                          "Aucune raison détaillée disponible."}
-                      </p>
-                      {mainRisk?.source && (
-                        <div className="source-box">
-                          <div className="source-label">SOURCE</div>
-                          <div className="source-value">
-                            {String(mainRisk.source).toUpperCase()}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+          {activeTab === "Client" && <div className="alert-tab-content alert-two-columns">
+            <section className="alert-panel"><span className="alert-eyebrow">IDENTITÉ</span><h2>{alert.client_name || "Client lié"}</h2><DetailRow label="N° client" value={alert.client_number} /><DetailRow label="Type" value={alert.client_type} /><DetailRow label="Statut" value={alert.client_status} /><DetailRow label="Nationalité" value={alert.nationality || alert.entity_nationality} /><DetailRow label="Profession / activité" value={alert.profession || alert.activity_sector} /></section>
+            <section className="alert-panel"><span className="alert-eyebrow">CONFORMITÉ</span><h2>Profil de risque</h2><DetailRow label="Statut PEP" value={Number(alert.is_pep) === 1 ? "Oui" : "Non"} /><DetailRow label="Score client" value={`${scoreText(alert.risk_score)}/100`} /><DetailRow label="Téléphone" value={alert.phone} /><DetailRow label="E-mail" value={alert.email} />{alert.client_id && <button className="alert-btn alert-btn-primary" onClick={() => navigate(`/clients/${alert.client_id}`)}>Ouvrir le dossier client</button>}</section>
+          </div>}
 
-                  {riskAssessments.length > 0 && (
-                    <div className="panel">
-                      <div className="panel-eyebrow">
-                        ÉVALUATIONS DE RISQUE ASSOCIÉES
-                      </div>
-                      <table className="risk-table">
-                        <thead>
-                          <tr>
-                            <th>TYPE</th>
-                            <th>SCORE</th>
-                            <th>NIVEAU</th>
-                            <th>DATE</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {riskAssessments.map((r) => (
-                            <tr key={r.id}>
-                              <td className="cell-strong">
-                                {r.risk_type || "RULE_BASED"}
-                              </td>
-                              <td className="cell-strong">{r.score}</td>
-                              <td>
-                                <RiskDot level={r.risk_level} />
-                              </td>
-                              <td className="cell-sub">
-                                {r.created_at
-                                  ? new Date(r.created_at).toLocaleString(
-                                      "fr-FR",
-                                      {
-                                        day: "2-digit",
-                                        month: "long",
-                                        year: "numeric",
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      }
-                                    )
-                                  : "—"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                    
-                </>
-              )}
+          {activeTab === "Transaction" && <div className="alert-tab-content alert-two-columns">
+            <section className="alert-panel"><span className="alert-eyebrow">OPÉRATION</span><h2>{alert.transaction_reference || "Transaction liée"}</h2><DetailRow label="Montant" value={formatAmount(alert.amount, alert.currency)} /><DetailRow label="Type" value={alert.transaction_type} /><DetailRow label="Canal" value={alert.channel} /><DetailRow label="Statut" value={alert.transaction_status} /><DetailRow label="Date" value={formatDateTime(alert.transaction_date)} /></section>
+            <section className="alert-panel"><span className="alert-eyebrow">CONTEXTE</span><h2>Compte et localisation</h2><DetailRow label="Compte" value={alert.account_number} /><DetailRow label="Type de compte" value={alert.account_type} /><DetailRow label="Agence" value={alert.agency_name || alert.agency_code} /><DetailRow label="Caisse" value={alert.caisse_name || alert.caisse_code} /><DetailRow label="Itinéraire" value={[alert.country_from, alert.country_to].filter(Boolean).join(" → ") || alert.country} />{alert.transaction_id && <button className="alert-btn alert-btn-primary" onClick={() => navigate(`/transactions/${alert.transaction_id}`)}>Ouvrir la transaction</button>}</section>
+          </div>}
 
-              {/* Onglet Client */}
-              {activeTab === "Client" && (
-                <div className="panel">
-                  <div className="panel-eyebrow">CLIENT LIÉ</div>
-                  <div className="summary-row">
-                    <span className="summary-label">Nom</span>
-                    <span className="summary-value">
-                      {alert.client_name || "—"}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="summary-label">N° client</span>
-                    <span className="summary-value">
-                      {alert.client_number || "—"}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="summary-label">Type</span>
-                    <span className="summary-value">
-                      {alert.client_type || "—"}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="summary-label">PEP</span>
-                    <span className="summary-value">
-                      {Number(alert.is_pep) === 1 ? "Oui" : "Non"}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="summary-label">Score risque client</span>
-                    <span className="summary-value">
-                      {alert.risk_score != null
-                        ? Number(alert.risk_score).toFixed(0)
-                        : "—"}
-                    </span>
-                  </div>
-                  {alert.client_id && (
-                    <div style={{ marginTop: 16 }}>
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => navigate(`/clients/${alert.client_id}`)}
-                      >
-                        Voir la fiche client →
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+          {activeTab === "Risque" && <div className="alert-tab-content"><MlAnalysisPanel analysis={mlAnalysis} status={mlStatus} error={mlError} onRefresh={refreshMlScore} /><section className="alert-panel"><span className="alert-eyebrow">ÉVALUATIONS</span><h2>Historique des moteurs de risque</h2><RiskTable assessments={riskAssessments} /></section></div>}
 
-              {/* Onglet Transaction */}
-              {activeTab === "Transaction" && (
-                <div className="panel">
-                  <div className="panel-eyebrow">TRANSACTION LIÉE</div>
-                  <div className="summary-row">
-                    <span className="summary-label">Référence</span>
-                    <span className="summary-value">
-                      {alert.transaction_reference || "—"}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="summary-label">Type</span>
-                    <span className="summary-value">
-                      {alert.transaction_type || "—"}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="summary-label">Montant</span>
-                    <span className="summary-value">
-                      {alert.amount != null
-                        ? `${Number(alert.amount).toLocaleString("fr-FR")} ${
-                            alert.currency || "FCFA"
-                          }`
-                        : "—"}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="summary-label">Canal</span>
-                    <span className="summary-value">
-                      {alert.channel || "—"}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="summary-label">Date</span>
-                    <span className="summary-value">
-                      {alert.transaction_date
-                        ? new Date(alert.transaction_date).toLocaleString(
-                            "fr-FR"
-                          )
-                        : "—"}
-                    </span>
-                  </div>
-                  {alert.transaction_id && (
-                    <div style={{ marginTop: 16 }}>
-                      <button
-                        className="btn btn-primary"
-                        onClick={() =>
-                          navigate(`/transactions/${alert.transaction_id}`)
-                        }
-                      >
-                        Voir la transaction →
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+          {activeTab === "Investigation" && <section className="alert-panel alert-tab-content"><span className="alert-eyebrow">TRAITEMENT</span><h2>Investigations associées</h2>
+            {investigations.length ? <div className="alert-table-scroll"><table className="alert-data-table"><thead><tr><th>Dossier</th><th>Assigné à</th><th>Décision</th><th>Commentaire</th><th>Début</th><th>Clôture</th></tr></thead><tbody>{investigations.map((item) => <tr key={item.id}><td className="alert-cell-strong">INV-{item.id}</td><td>{item.assigned_name || item.assigned_username || "—"}</td><td>{item.decision || "En cours"}</td><td className="alert-reason-cell">{item.comment || "—"}</td><td className="alert-date-cell">{formatDateTime(item.started_at)}</td><td className="alert-date-cell">{formatDateTime(item.closed_at)}</td></tr>)}</tbody></table></div> : <EmptyState>Aucune investigation ouverte sur cette alerte.</EmptyState>}
+          </section>}
 
-              {/* Onglet Risque */}
-              {activeTab === "Risque" && (
-                <div className="panel">
-                  <div className="panel-eyebrow">ÉVALUATIONS DE RISQUE</div>
-                  {riskAssessments.length === 0 ? (
-                    <p style={{ color: "#64748b" }}>
-                      Aucune évaluation de risque associée.
-                    </p>
-                  ) : (
-                    <table className="risk-table">
-                      <thead>
-                        <tr>
-                          <th>TYPE</th>
-                          <th>SCORE</th>
-                          <th>NIVEAU</th>
-                          <th>RAISON</th>
-                          <th>SOURCE</th>
-                          <th>DATE</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {riskAssessments.map((r) => (
-                          <tr key={r.id}>
-                            <td className="cell-strong">
-                              {r.risk_type || "—"}
-                            </td>
-                            <td className="cell-strong">{r.score}</td>
-                            <td>
-                              <RiskDot level={r.risk_level} />
-                            </td>
-                            <td className="cell-sub">{r.reason || "—"}</td>
-                            <td className="cell-sub">
-                              {r.source || "—"}
-                            </td>
-                            <td className="cell-sub">
-                              {r.created_at
-                                ? new Date(r.created_at).toLocaleString(
-                                    "fr-FR"
-                                  )
-                                : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              )}
+          {activeTab === "Actions" && <section className="alert-panel alert-tab-content"><span className="alert-eyebrow">JOURNAL</span><h2>Historique des actions</h2>
+            {actions.length ? <div className="alert-table-scroll"><table className="alert-data-table"><thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Commentaire</th></tr></thead><tbody>{actions.map((item) => <tr key={item.id}><td className="alert-date-cell">{formatDateTime(item.created_at)}</td><td>{item.user_name || item.username || "—"}</td><td className="alert-cell-strong">{item.action_type || "—"}</td><td className="alert-reason-cell">{item.comment || "—"}</td></tr>)}</tbody></table></div> : <EmptyState>Aucune action enregistrée sur cette alerte.</EmptyState>}
+          </section>}
 
-              {/* Onglet Investigation */}
-              {activeTab === "Investigation" && (
-                <div className="panel">
-                  <div className="panel-eyebrow">INVESTIGATIONS</div>
-                  {investigations.length === 0 ? (
-                    <p style={{ color: "#64748b" }}>
-                      Aucune investigation ouverte sur cette alerte.
-                    </p>
-                  ) : (
-                    <table className="risk-table">
-                      <thead>
-                        <tr>
-                          <th>ID</th>
-                          <th>ASSIGNÉ</th>
-                          <th>DÉCISION</th>
-                          <th>COMMENTAIRE</th>
-                          <th>DÉBUT</th>
-                          <th>CLÔTURE</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {investigations.map((inv) => (
-                          <tr key={inv.id}>
-                            <td className="cell-strong">{inv.id}</td>
-                            <td>
-                              {inv.assigned_username || "—"}
-                            </td>
-                            <td>{inv.decision || "—"}</td>
-                            <td className="cell-sub">
-                              {inv.comment || "—"}
-                            </td>
-                            <td className="cell-sub">
-                              {inv.started_at
-                                ? new Date(inv.started_at).toLocaleString(
-                                    "fr-FR"
-                                  )
-                                : "—"}
-                            </td>
-                            <td className="cell-sub">
-                              {inv.closed_at
-                                ? new Date(inv.closed_at).toLocaleString(
-                                    "fr-FR"
-                                  )
-                                : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              )}
-
-              {/* Onglet Actions */}
-              {activeTab === "Actions" && (
-                <div className="panel">
-                  <div className="panel-eyebrow">HISTORIQUE DES ACTIONS</div>
-                  {actions.length === 0 ? (
-                    <p style={{ color: "#64748b" }}>
-                      Aucune action enregistrée sur cette alerte.
-                    </p>
-                  ) : (
-                    <table className="risk-table">
-                      <thead>
-                        <tr>
-                          <th>DATE</th>
-                          <th>UTILISATEUR</th>
-                          <th>TYPE</th>
-                          <th>COMMENTAIRE</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {actions.map((act) => (
-                          <tr key={act.id}>
-                            <td className="cell-sub">
-                              {act.created_at
-                                ? new Date(act.created_at).toLocaleString(
-                                    "fr-FR"
-                                  )
-                                : "—"}
-                            </td>
-                            <td>{act.username || "—"}</td>
-                            <td className="cell-strong">
-                              {act.action_type || "—"}
-                            </td>
-                            <td className="cell-sub">
-                              {act.comment || "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-                
-              )}
-
-              {/* Sentinelle Assist — tiroir droit (hors onglets) */}
-              <AssistPanel
-                objectType="alert"
-                objectId={Number(id)}
-                transactionId={alert?.transaction_id ? Number(alert.transaction_id) : null}
-                title="Assist — cette alerte"
-              />
-
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+          <AssistPanel objectType="alert" objectId={Number(id)} transactionId={alert.transaction_id ? Number(alert.transaction_id) : null} title="Assist — cette alerte" />
+        </>}
+      </main>
+    </div></div>
   );
 }

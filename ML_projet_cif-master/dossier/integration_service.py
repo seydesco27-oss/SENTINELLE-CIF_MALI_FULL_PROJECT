@@ -8,7 +8,7 @@ from typing import Mapping
 import pandas as pd
 
 from fusion_et_modele.backend_adapter import backend_to_model_features, validate_backend_transaction
-from fusion_et_modele.risk_predictor import predire_risque
+from fusion_et_modele.risk_predictor import predire_risque_explique
 from niveau1_screening.sanctions_screening import SanctionsScreener, load_watchlist_csv
 
 
@@ -27,7 +27,8 @@ class CIFRiskService:
         if errors:
             raise ValueError("; ".join(errors))
 
-        model_score = predire_risque(backend_to_model_features(transaction))
+        model_features = backend_to_model_features(transaction)
+        model_score, model_factors = predire_risque_explique(model_features)
         screening = self.screener.screen(client_name) if self.screener and client_name else None
         sanctions_score = float(transaction.get("max_sanction_match_score") or 0) / 100
         screening_score = max(sanctions_score, (screening.matches[0].score / 100 if screening and screening.matches else 0))
@@ -42,5 +43,12 @@ class CIFRiskService:
             "rule_score": rule_score,
             "screening_score": screening_score,
             "final_score": final_score,
+            "model_factors": model_factors,
+            "model_features": model_features,
+            "weights": {
+                "model": 0.65,
+                "rules": 0.20,
+                "screening": 0.15,
+            },
             "screening_risk_level": screening.risk_level if screening else "non_evalue",
         }

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import DemoRail from "../components/DemoRail";
 import { getTransactions } from "../services/api";
+import { canAccess } from "../auth/access";
 import "./TransactionsList.css";
 
 const TYPE_OPTS = [
@@ -94,6 +95,7 @@ function formatDateTime(value) {
 
 export default function TransactionsList({ user, onLogout }) {
   const navigate = useNavigate();
+  const canViewCompliance = canAccess(user, "risk_analysis");
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -140,21 +142,21 @@ export default function TransactionsList({ user, onLogout }) {
 
   const displayed = useMemo(() => {
     return transactions.filter((t) => {
-      if (riskFilter !== "ALL") {
+      if (canViewCompliance && riskFilter !== "ALL") {
         const lvl = riskLevelFromScore(t.risk_score, t.risk_level || t.aml_risk_level);
         if (lvl !== riskFilter) return false;
       }
-      if (alertFilter === "WITH") {
+      if (canViewCompliance && alertFilter === "WITH") {
         if (!(t.has_alert || t.alert_id || Number(t.alert_count) > 0))
           return false;
       }
-      if (alertFilter === "WITHOUT") {
+      if (canViewCompliance && alertFilter === "WITHOUT") {
         if (t.has_alert || t.alert_id || Number(t.alert_count) > 0)
           return false;
       }
       return true;
     });
-  }, [transactions, riskFilter, alertFilter]);
+  }, [transactions, riskFilter, alertFilter, canViewCompliance]);
 
   const highRiskCount = useMemo(
     () =>
@@ -192,7 +194,11 @@ export default function TransactionsList({ user, onLogout }) {
             <div>
               <p className="eyebrow">DONNÉES / FLUX TRANSACTIONNEL</p>
               <h1>Transactions</h1>
-              <p>Historique des opérations évaluées par le moteur AML.</p>
+              <p>
+                {canViewCompliance
+                  ? "Historique des opérations évaluées par le moteur AML."
+                  : `Historique des opérations de ${user?.agency?.name || "votre agence"}.`}
+              </p>
             </div>
           </header>
 
@@ -205,18 +211,17 @@ export default function TransactionsList({ user, onLogout }) {
                 value: displayed.length,
                 note: "Jeu filtré",
               },
-              {
+              ...(canViewCompliance ? [{
                 label: "RISQUE ÉLEVÉ+",
                 value: highRiskCount,
                 note: "HIGH / CRITICAL",
                 danger: true,
-              },
-              {
+              }, {
                 label: "AVEC ALERTE",
                 value: withAlertCount,
                 note: "Signal AML lié",
                 warn: true,
-              },
+              }] : []),
               {
                 label: "VOLUME AFFICHÉ",
                 value: formatAmount(volume),
@@ -266,7 +271,7 @@ export default function TransactionsList({ user, onLogout }) {
               </select>
             </div>
 
-            <div className="tl-filter-inline">
+            {canViewCompliance && <div className="tl-filter-inline">
               <span>RISQUE</span>
               <select
                 value={riskFilter}
@@ -278,9 +283,9 @@ export default function TransactionsList({ user, onLogout }) {
                   </option>
                 ))}
               </select>
-            </div>
+            </div>}
 
-            <div className="tl-filter-inline">
+            {canViewCompliance && <div className="tl-filter-inline">
               <span>ALERTE</span>
               <select
                 value={alertFilter}
@@ -292,7 +297,7 @@ export default function TransactionsList({ user, onLogout }) {
                   </option>
                 ))}
               </select>
-            </div>
+            </div>}
 
             <button
               type="button"
@@ -322,7 +327,7 @@ export default function TransactionsList({ user, onLogout }) {
                       <th>MONTANT</th>
                       <th>CANAL</th>
                       <th>STATUT</th>
-                      <th>RISQUE</th>
+                      {canViewCompliance && <th>RISQUE</th>}
                       <th>DATE</th>
                       <th></th>
                     </tr>
@@ -330,7 +335,7 @@ export default function TransactionsList({ user, onLogout }) {
                   <tbody>
                     {displayed.length === 0 ? (
                       <tr>
-                        <td className="empty-cell" colSpan={9}>
+                        <td className="empty-cell" colSpan={canViewCompliance ? 9 : 8}>
                           Aucune transaction pour ce périmètre.
                         </td>
                       </tr>
@@ -371,12 +376,12 @@ export default function TransactionsList({ user, onLogout }) {
                               {t.transaction_status || t.status || "—"}
                             </span>
                           </td>
-                          <td>
+                          {canViewCompliance && <td>
                             <RiskBadge
                               score={t.risk_score ?? t.aml_risk_score}
                               level={t.risk_level || t.aml_risk_level}
                             />
-                          </td>
+                          </td>}
                           <td className="cell-muted">
                             {formatDateTime(
                               t.transaction_date || t.created_at
@@ -402,9 +407,8 @@ export default function TransactionsList({ user, onLogout }) {
               </div>
             )}
             <div className="tl-footer-note">
-              {displayed.length} résultat{displayed.length !== 1 ? "s" : ""} ·
-              API /transactions (search, transaction_type) · risque/alerte =
-              filtre local sur le jeu chargé
+              {displayed.length} résultat{displayed.length !== 1 ? "s" : ""} affiché
+              {displayed.length !== 1 ? "s" : ""}
             </div>
           </div>
         </section>

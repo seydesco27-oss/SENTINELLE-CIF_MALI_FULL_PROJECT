@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import DemoRail from "../components/DemoRail";
 import { getClients, createClient, getNetwork } from "../services/api";
+import { canAccess } from "../auth/access";
 import "./ClientsList.css";
 
 const RISK_OPTS = [
@@ -52,6 +53,7 @@ function formatAmount(amount) {
 
 export default function ClientsList({ user, onLogout }) {
   const navigate = useNavigate();
+  const canViewCompliance = canAccess(user, "risk_analysis");
   const [clients, setClients] = useState([]);
   const [meta, setMeta] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -166,11 +168,11 @@ export default function ClientsList({ user, onLogout }) {
       try {
         const params = {
           per_page: 50,
-          sort: "risk_score",
+          sort: canViewCompliance ? "risk_score" : "client_id",
           direction: sortDir,
         };
         if (search.trim()) params.search = search.trim();
-        if (riskFilter !== "ALL") params.risk_level = riskFilter;
+        if (canViewCompliance && riskFilter !== "ALL") params.risk_level = riskFilter;
         if (typeFilter !== "ALL") params.client_type = typeFilter;
 
         const res = await getClients(params);
@@ -199,7 +201,7 @@ export default function ClientsList({ user, onLogout }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [search, riskFilter, typeFilter, sortDir, reloadTick]);
+  }, [search, riskFilter, typeFilter, sortDir, reloadTick, canViewCompliance]);
 
   const pepCount = useMemo(
     () => clients.filter((c) => Number(c.is_pep) === 1 || c.is_pep === true).length,
@@ -223,6 +225,8 @@ export default function ClientsList({ user, onLogout }) {
   );
 
   const totalDisplay = meta?.total ?? clients.length;
+  const individualCount = clients.filter((c) => c.client_type === "INDIVIDUAL").length;
+  const entityCount = clients.filter((c) => c.client_type === "ENTITY").length;
 
   return (
     <div className="app-shell">
@@ -236,20 +240,21 @@ export default function ClientsList({ user, onLogout }) {
               <p className="eyebrow">DONNÉES / PORTEFEUILLE CLIENTS</p>
               <h1>Clients</h1>
               <p>
-                Vue consolidée du portefeuille client, tous points d’opération
-                confondus.
+                {canViewCompliance
+                  ? "Vue consolidée du portefeuille client, tous points d’opération confondus."
+                  : `Clients rattachés à ${user?.agency?.name || "votre agence"}.`}
               </p>
             </div>
-            <button
+            {canViewCompliance && <button
               type="button"
               className="cl-new-btn"
               onClick={() => setCreateOpen((v) => !v)}
             >
               {createOpen ? "Fermer" : "+ Nouveau client"}
-            </button>
+            </button>}
           </header>
 
-          {createOpen && (
+          {canViewCompliance && createOpen && (
             <div className="cl-create-panel">
               <div className="cl-create-title">CRÉATION CLIENT — KYC MINIMAL</div>
               {createMsg.text && (
@@ -353,24 +358,30 @@ export default function ClientsList({ user, onLogout }) {
                     : totalDisplay,
                 note: meta?.total != null ? "Portefeuille (meta API)" : "Page courante",
               },
-              {
+              ...(canViewCompliance ? [{
                 label: "RISQUE CRITIQUE",
                 value: criticalCount,
                 note: "Page courante",
                 danger: true,
-              },
-              {
+              }, {
                 label: "RISQUE ÉLEVÉ+",
                 value: highCount,
                 note: "HIGH + CRITICAL",
                 warn: true,
-              },
-              {
+              }, {
                 label: "CLIENTS PEP",
                 value: pepCount,
                 note: "Page courante",
                 purple: true,
-              },
+              }] : [{
+                label: "INDIVIDUS",
+                value: individualCount,
+                note: "Page courante",
+              }, {
+                label: "ENTITÉS",
+                value: entityCount,
+                note: "Page courante",
+              }]),
             ].map((item) => (
               <div
                 key={item.label}
@@ -402,7 +413,7 @@ export default function ClientsList({ user, onLogout }) {
               />
             </div>
 
-            <div className="cl-filter-inline">
+            {canViewCompliance && <div className="cl-filter-inline">
               <span>RISQUE</span>
               <select
                 value={riskFilter}
@@ -414,7 +425,7 @@ export default function ClientsList({ user, onLogout }) {
                   </option>
                 ))}
               </select>
-            </div>
+            </div>}
 
             <div className="cl-filter-inline">
               <span>TYPE</span>
@@ -430,7 +441,7 @@ export default function ClientsList({ user, onLogout }) {
               </select>
             </div>
 
-            <div className="cl-filter-inline">
+            {canViewCompliance && <div className="cl-filter-inline">
               <span>TRI SCORE</span>
               <select
                 value={sortDir}
@@ -439,7 +450,7 @@ export default function ClientsList({ user, onLogout }) {
                 <option value="desc">Décroissant</option>
                 <option value="asc">Croissant</option>
               </select>
-            </div>
+            </div>}
 
             <button
               type="button"
@@ -466,17 +477,17 @@ export default function ClientsList({ user, onLogout }) {
                       <th>CLIENT</th>
                       <th>N°</th>
                       <th>TYPE</th>
-                      <th>RISQUE</th>
-                      <th>SCORE</th>
-                      <th>PEP</th>
-                      <th>ALERTES</th>
+                      {canViewCompliance && <th>RISQUE</th>}
+                      {canViewCompliance && <th>SCORE</th>}
+                      {canViewCompliance && <th>PEP</th>}
+                      {canViewCompliance && <th>ALERTES</th>}
                       <th>VOLUME</th>
                     </tr>
                   </thead>
                   <tbody>
                     {clients.length === 0 ? (
                       <tr>
-                        <td className="empty-cell" colSpan={8}>
+                        <td className="empty-cell" colSpan={canViewCompliance ? 8 : 4}>
                           Aucun client pour ce périmètre.
                         </td>
                       </tr>
@@ -514,20 +525,20 @@ export default function ClientsList({ user, onLogout }) {
                                     : c.client_type || "—"}
                               </span>
                             </td>
-                            <td>
+                            {canViewCompliance && <td>
                               <RiskBadge level={c.risk_level} />
-                            </td>
-                            <td className="mono">
+                            </td>}
+                            {canViewCompliance && <td className="mono">
                               {c.risk_score != null
                                 ? Number(c.risk_score).toFixed(0)
                                 : "—"}
-                            </td>
-                            <td>
+                            </td>}
+                            {canViewCompliance && <td>
                               <PepBadge isPep={c.is_pep} />
-                            </td>
-                            <td className="mono">
+                            </td>}
+                            {canViewCompliance && <td className="mono">
                               {c.alert_count != null ? c.alert_count : "—"}
-                            </td>
+                            </td>}
                             <td className="mono">
                               {formatAmount(c.total_volume)}
                             </td>
