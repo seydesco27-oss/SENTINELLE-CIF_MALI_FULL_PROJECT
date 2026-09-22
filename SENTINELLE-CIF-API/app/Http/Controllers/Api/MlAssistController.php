@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Services\GroqChatClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Throwable;
 
 /**
@@ -139,6 +139,7 @@ class MlAssistController extends \App\Http\Controllers\Controller
         $type = strtolower((string) $request->input('object_type', 'alert'));
         $id = (int) $request->input('object_id');
         $message = trim((string) $request->input('message', ''));
+        $history = $this->validatedChatHistory($request->input('history', []));
 
         if ((!in_array($type, ['alert', 'client', 'general'], true) || ($type !== 'general' && $id <= 0)) || $message === '') {
             return response()->json([
@@ -190,14 +191,29 @@ class MlAssistController extends \App\Http\Controllers\Controller
                     'sources' => [],
                 ]);
 
+        // Le LLM ne reçoit pas les suggestions générées par les templates comme
+        // preuve. Il reçoit séparément un dossier de faits, extrait des tables
+        // source de la base de données.
+        $verifiedFacts = $this->verifiedDossierFacts($type, $context);
+
         try {
-            $llm = $this->askLlm($message, $payload);
+            $llm = $this->askAgent($message, $history, $type, $id);
         } catch (Throwable $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Le fournisseur LLM est indisponible.',
-                'error' => $e->getMessage(),
-            ], 502);
+            report($e);
+            if ($e->getMessage() === 'GROQ_API_KEY absente.') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Le chatbot conversationnel doit être configuré : ajoutez GROQ_API_KEY dans le fichier .env.',
+                ], 502);
+            }
+
+            // Groq a échoué après retries/modèles de secours : l'analyste
+            // conserve une réponse locale plutôt qu'un bandeau d'erreur.
+            $llm = [
+                'text' => trim((string) ($payload['summary'] ?? 'Analyse contextuelle disponible.'))
+                    . "\n\nRéponse locale : le modèle distant n’a pas pu répondre (quota ou réseau). Relancez la question dans une minute.",
+                'provider' => 'template',
+            ];
         }
 
         return response()->json([
@@ -207,6 +223,7 @@ class MlAssistController extends \App\Http\Controllers\Controller
                 'intent' => $action,
                 'provider' => $llm['provider'] ?? 'template',
                 'payload' => $payload,
+                'verified_facts' => $verifiedFacts,
                 'disclaimer' => $llm
                     ? 'Réponse générée par IA à partir du contexte disponible. Vérifier les faits et conserver la décision humaine.'
                     : 'Réponse contextuelle — vérifier les faits et conserver la décision humaine.',
@@ -214,64 +231,417 @@ class MlAssistController extends \App\Http\Controllers\Controller
         ]);
     }
 
-    private function askLlm(string $question, array $payload): ?array
+    /**
+     * Retient au plus les derniers tours transmis par le navigateur. Les
+     * conversations ne sont volontairement pas persistées côté serveur :
+     * elles restent associées au dossier ouvert et à la session navigateur.
+     */
+    private function validatedChatHistory(mixed $history): array
     {
-        $provider = strtolower((string) env('LLM_PROVIDER', 'grok'));
-        $apiKey = (string) env('LLM_API_KEY', '');
-
-        if ($apiKey === '') {
-            $apiKey = $provider === 'openai'
-                ? (string) env('OPENAI_API_KEY', '')
-                : (string) env('GROK_API_KEY', '');
+        if (!is_array($history)) {
+            return [];
         }
 
-        if ($apiKey === '') {
-            return null;
+        $validated = [];
+        foreach (array_slice($history, -12) as $turn) {
+            if (!is_array($turn)) {
+                continue;
+            }
+
+            $role = $turn['role'] ?? null;
+            $content = trim((string) ($turn['content'] ?? ''));
+            if (!in_array($role, ['user', 'assistant'], true) || $content === '') {
+                continue;
+            }
+
+            $validated[] = [
+                'role' => $role,
+                'content' => mb_substr($content, 0, 1500),
+            ];
         }
 
-        $baseUrl = rtrim((string) env(
-            'LLM_BASE_URL',
-            $provider === 'openai' ? 'https://api.openai.com/v1' : 'https://api.x.ai/v1'
-        ), '/');
-        $model = (string) env(
-            'LLM_MODEL',
-            $provider === 'openai' ? 'gpt-4o-mini' : 'grok-3-mini'
-        );
-        $context = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-        $context = mb_substr((string) $context, 0, 14000);
+        return $validated;
+    }
 
-        $response = Http::withToken($apiKey)
-            ->acceptJson()
-            ->timeout(30)
-            ->post($baseUrl . '/chat/completions', [
-                'model' => $model,
-                'temperature' => 0.2,
-                'max_tokens' => 900,
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es Sentinelle Assist, un copilote de conformité LBC/FT/FP. Réponds en français, de façon claire et utile. Tu peux répondre aux questions générales, mais pour les questions du dossier utilise uniquement les faits fournis. N invente jamais une donnée absente. Sépare les faits, les hypothèses et les vérifications à faire. Ne prends jamais une décision réglementaire, ne recommande jamais automatiquement un blocage et rappelle que la décision appartient à l analyste humain.',
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Contexte du dossier :\n{$context}\n\nQuestion de l analyste :\n{$question}",
-                    ],
-                ],
-            ]);
-
-        if (!$response->successful()) {
-            throw new \RuntimeException('Réponse fournisseur: HTTP ' . $response->status());
+    /**
+     * Agent Groq : au plus un tour d'outils puis une synthèse, pour rester
+     * sous le quota TPM du plan gratuit. En cas de 429, un autre modèle
+     * (quota distinct) reprend toute la boucle.
+     */
+    private function askAgent(string $question, array $history, string $objectType, int $objectId): array
+    {
+        $client = app(GroqChatClient::class);
+        if ($client->apiKey() === '') {
+            throw new \RuntimeException('GROQ_API_KEY absente.');
         }
 
-        $text = $response->json('choices.0.message.content');
-        if (!is_string($text) || trim($text) === '') {
-            throw new \RuntimeException('Réponse LLM vide ou non conforme.');
+        $last = null;
+        foreach ($client->models() as $model) {
+            try {
+                return $this->runAgentLoop($client, $model, $question, $history, $objectType, $objectId);
+            } catch (Throwable $e) {
+                $last = $e;
+                if (!str_contains($e->getMessage(), 'HTTP 429')
+                    && !str_contains($e->getMessage(), 'HTTP 503')
+                    && !str_contains($e->getMessage(), 'HTTP 502')) {
+                    throw $e;
+                }
+            }
         }
+
+        throw $last ?? new \RuntimeException('Réponse fournisseur indisponible.');
+    }
+
+    private function runAgentLoop(
+        GroqChatClient $client,
+        string $model,
+        string $question,
+        array $history,
+        string $objectType,
+        int $objectId
+    ): array {
+        $recentHistory = array_slice($history, -3);
+        $messages = [[
+            'role' => 'system',
+            'content' => $this->agentSystemPrompt($objectType, $objectId),
+        ], ...array_map(fn (array $turn) => [
+            'role' => $turn['role'],
+            'content' => mb_substr($turn['content'], 0, 500),
+        ], $recentHistory)];
+
+        if ($recentHistory === []) {
+            $messages[] = ['role' => 'user', 'content' => $question];
+        }
+
+        $json = $client->complete([
+            'temperature' => 0.2,
+            'max_tokens' => 400,
+            'messages' => $messages,
+            'tools' => $this->agentTools(),
+            'tool_choice' => 'auto',
+        ], $model);
+
+        $assistant = $json['choices'][0]['message'] ?? null;
+        if (!is_array($assistant)) {
+            throw new \RuntimeException('Réponse agent vide ou non conforme.');
+        }
+
+        $toolCalls = $assistant['tool_calls'] ?? [];
+        if (!is_array($toolCalls) || $toolCalls === []) {
+            $text = trim((string) ($assistant['content'] ?? ''));
+            if ($text === '') {
+                throw new \RuntimeException('Réponse agent vide ou non conforme.');
+            }
+
+            return ['text' => $text, 'provider' => 'groq'];
+        }
+
+        $messages[] = [
+            'role' => 'assistant',
+            'content' => $assistant['content'] ?? null,
+            'tool_calls' => $toolCalls,
+        ];
+        foreach ($toolCalls as $call) {
+            $name = (string) ($call['function']['name'] ?? '');
+            $arguments = json_decode((string) ($call['function']['arguments'] ?? '{}'), true);
+            $result = is_array($arguments)
+                ? $this->executeAgentTool($name, $arguments)
+                : ['error' => 'Arguments d’outil invalides.'];
+            $messages[] = [
+                'role' => 'tool',
+                'tool_call_id' => (string) ($call['id'] ?? ''),
+                'content' => mb_substr((string) json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 0, 1500),
+            ];
+        }
+
+        $final = $client->complete([
+            'temperature' => 0.2,
+            'max_tokens' => 400,
+            'messages' => [...$messages, [
+                'role' => 'user',
+                'content' => 'Réponds maintenant uniquement à partir des résultats d’outils. N’appelle plus d’outil.',
+            ]],
+            'tool_choice' => 'none',
+        ], $model);
+
+        $text = trim((string) ($final['choices'][0]['message']['content'] ?? ''));
+        if ($text === '') {
+            throw new \RuntimeException('Réponse agent finale vide ou non conforme.');
+        }
+
+        return ['text' => $text, 'provider' => 'groq'];
+    }
+
+    private function agentSystemPrompt(string $objectType, int $objectId): string
+    {
+        $today = now('Europe/Paris')->locale('fr')->isoFormat('dddd D MMMM YYYY');
+        return "Tu es Sentinelle Assist, un assistant conversationnel de conformité CIF. Réponds en français. Nous sommes le {$today}. "
+            . "Tu peux répondre naturellement aux questions générales. Pour toute question sur une personne, un client, un compte, "
+            . "une alerte ou une transaction CIF, tu ne connais aucun fait par avance : appelle au moins un outil avant de répondre. "
+            . "Pour une demande de liste globale d’alertes (par exemple les alertes critiques), appelle obtenir_alertes_globales. Les alertes actives, ouvertes ou en action ont le statut OPEN. Quand un outil retourne un total, cite ce total et précise qu’une liste peut être un aperçu. "
+            . "Choisis les outils nécessaires, ne prétends jamais qu’une donnée existe sans résultat d’outil. Si la recherche ne trouve rien, dis-le clairement. "
+            . "Si la recherche renvoie plusieurs clients ayant exactement le même nom, ne choisis jamais arbitrairement : demande une référence client ou une référence d’alerte. "
+            . "Utilise un texte simple et lisible, sans tableaux Markdown. "
+            . "Ne prends pas de décision réglementaire. Le dossier actuellement ouvert est de type {$objectType}, identifiant {$objectId}; "
+            . "utilise cet identifiant uniquement s’il est pertinent, mais recherche le client explicitement nommé dans la question.";
+    }
+
+    private function agentTools(): array
+    {
+        $tool = fn (string $name, string $description, array $properties, array $required) => [
+            'type' => 'function',
+            'function' => [
+                'name' => $name,
+                'description' => $description,
+                'parameters' => ['type' => 'object', 'properties' => $properties, 'required' => $required],
+            ],
+        ];
 
         return [
-            'text' => trim($text),
-            'provider' => $provider,
+            $tool('rechercher_client', 'Recherche un client par nom, même approximatif ou dans un ordre inversé.', ['nom' => ['type' => 'string']], ['nom']),
+            $tool('obtenir_alertes_globales', 'Liste les alertes de l’ensemble du portefeuille, filtrées par priorité ou statut. Les statuts valides sont OPEN, IN_REVIEW, CLOSED et DISMISSED. Pour active, ouverte ou en action, utiliser OPEN.', ['priorite' => ['type' => 'string', 'enum' => ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']], 'statut' => ['type' => 'string'], 'limite' => ['type' => 'integer']], []),
+            $tool('obtenir_alertes_client', 'Liste les alertes actives ou récentes d’un client.', ['client_id' => ['type' => 'integer']], ['client_id']),
+            $tool('obtenir_regles_declenchees', 'Détaille les règles AML déclenchées par une alerte.', ['alert_id' => ['type' => 'integer']], ['alert_id']),
+            $tool('verifier_screening_ppe_sanctions', 'Retourne le statut PPE et les correspondances sanctions.', ['client_id' => ['type' => 'integer']], ['client_id']),
+            $tool('analyser_reseau_comptes_lies', 'Analyse les comptes reliés par téléphone, document ou agence et calcule le cumul du réseau.', ['client_id' => ['type' => 'integer'], 'periode_jours' => ['type' => 'integer']], ['client_id']),
+            $tool('obtenir_historique_transactions', 'Retourne les transactions récentes d’un client.', ['client_id' => ['type' => 'integer'], 'periode_jours' => ['type' => 'integer']], ['client_id']),
+            $tool('obtenir_score_ml_et_facteurs', 'Retourne le dernier score ML et ses facteurs explicatifs.', ['client_id' => ['type' => 'integer']], ['client_id']),
         ];
+    }
+
+    private function executeAgentTool(string $name, array $args): array
+    {
+        $clientId = max(0, (int) ($args['client_id'] ?? 0));
+        $days = min(365, max(1, (int) ($args['periode_jours'] ?? 30)));
+        return match ($name) {
+            'rechercher_client' => $this->searchClients((string) ($args['nom'] ?? '')),
+            'obtenir_alertes_globales' => $this->globalAlerts((string) ($args['priorite'] ?? ''), (string) ($args['statut'] ?? ''), min(50, max(1, (int) ($args['limite'] ?? 10)))),
+            'obtenir_alertes_client' => $this->clientAlerts($clientId),
+            'obtenir_regles_declenchees' => $this->alertRules(max(0, (int) ($args['alert_id'] ?? 0))),
+            'verifier_screening_ppe_sanctions' => $this->screeningStatus($clientId),
+            'analyser_reseau_comptes_lies' => $this->linkedAccountsNetwork($clientId, $days),
+            'obtenir_historique_transactions' => $this->transactionHistory($clientId, $days),
+            'obtenir_score_ml_et_facteurs' => $this->mlScoreAndFactors($clientId),
+            default => ['error' => 'Outil inconnu.'],
+        };
+    }
+
+    private function searchClients(string $name): array
+    {
+        $needle = trim($name);
+        if ($needle === '') return ['clients' => []];
+        $terms = array_values(array_filter(preg_split('/\\s+/u', $needle) ?: []));
+        $rows = DB::table('clients as c')
+            ->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
+            ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
+            ->select('c.id', 'c.client_number', 'ci.first_name', 'ci.last_name', 'ce.legal_name')
+            ->where(function ($q) use ($terms) {
+                foreach ($terms as $term) {
+                    $q->where(function ($termQuery) use ($term) {
+                        $termQuery->where('ci.first_name', 'like', "%{$term}%")
+                            ->orWhere('ci.last_name', 'like', "%{$term}%")
+                            ->orWhere('ce.legal_name', 'like', "%{$term}%");
+                    });
+                }
+            })->limit(20)->get();
+        if ($rows->isEmpty()) {
+            $rows = DB::table('clients as c')->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
+                ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
+                ->select('c.id', 'c.client_number', 'ci.first_name', 'ci.last_name', 'ce.legal_name')->limit(5000)->get();
+        }
+        $wanted = $this->normaliseName($needle);
+        return ['clients' => $rows->map(function ($row) use ($wanted) {
+            $fullName = trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? '')) ?: ($row->legal_name ?? $row->client_number);
+            similar_text($wanted, $this->normaliseName($fullName), $score);
+            return ['client_id' => $row->id, 'nom_complet' => $fullName, 'reference' => $row->client_number, 'score_similarite' => round($score, 1)];
+        })->filter(fn ($row) => $row['score_similarite'] >= 35)->sortByDesc('score_similarite')->take(5)->values()->all()];
+    }
+
+    private function clientAlerts(int $clientId): array
+    {
+        return ['alertes' => DB::table('alerts')->where('client_id', $clientId)->orderByDesc('created_at')->limit(20)
+            ->get(['id as alert_id', 'reference', 'priority as niveau', 'status', 'final_score as score', 'created_at as date'])->map(fn ($r) => (array) $r)->all()];
+    }
+
+    private function globalAlerts(string $priority, string $status, int $limit): array
+    {
+        $status = match (strtoupper(trim($status))) {
+            'ACTIVE', 'ACTIF', 'ACTIFS', 'OUVERT', 'OUVERTE', 'OUVERTES', 'EN ACTION' => 'OPEN',
+            'EN REVUE', 'EN_REVIEW' => 'IN_REVIEW',
+            'CLOS', 'CLOTURE', 'CLÔTURÉ', 'CLOSED' => 'CLOSED',
+            default => strtoupper(trim($status)),
+        };
+        $query = DB::table('alerts as a')->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
+            ->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
+            ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
+            ->select('a.id as alert_id', 'a.reference', 'a.priority', 'a.status', 'a.final_score as score', 'a.created_at as date',
+                DB::raw("COALESCE(NULLIF(TRIM(CONCAT(COALESCE(ci.first_name,''), ' ', COALESCE(ci.last_name,''))), ''), ce.legal_name, c.client_number) as client"));
+        if ($priority !== '') $query->where('a.priority', strtoupper($priority));
+        if ($status !== '') $query->where('a.status', strtoupper($status));
+        $total = (clone $query)->count();
+        return ['total' => $total, 'limite_apercu' => $limit, 'statut_applique' => $status ?: null,
+            'alertes' => $query->orderByDesc('a.final_score')->orderByDesc('a.created_at')->limit($limit)->get()->map(fn ($r) => (array) $r)->all()];
+    }
+
+    private function alertRules(int $alertId): array
+    {
+        $transactionId = (int) DB::table('alerts')->where('id', $alertId)->value('transaction_id');
+        if ($transactionId <= 0) return ['regles' => [], 'message' => 'Cette alerte n’est liée à aucune transaction.'];
+        return ['regles' => DB::table('rule_executions as re')->join('aml_rules as ar', 'ar.id', '=', 're.rule_id')
+            ->leftJoin('rule_conditions as rc', 'rc.rule_id', '=', 'ar.id')->where('re.transaction_id', $transactionId)
+            ->select('ar.rule_code', 'ar.name as rule_label', 'ar.description', 'ar.score as score_contribution', 're.execution_result', DB::raw("GROUP_CONCAT(CONCAT(rc.field_name, ' ', rc.operator, ' ', rc.value) SEPARATOR '; ') as condition_detail"))
+            ->groupBy('ar.id', 'ar.rule_code', 'ar.name', 'ar.description', 'ar.score', 're.execution_result')->get()->map(fn ($r) => (array) $r)->all()];
+    }
+
+    private function screeningStatus(int $clientId): array
+    {
+        return ['est_ppe' => (bool) DB::table('clients')->where('id', $clientId)->value('is_pep'),
+            'correspondances_ppe' => DB::table('pep_matches')->where('client_id', $clientId)->get(['pep_category', 'position', 'country', 'match_score'])->map(fn ($r) => (array) $r)->all(),
+            'correspondances_sanctions' => DB::table('sanction_matches')->where('client_id', $clientId)->get(['sanction_type', 'authority', 'reason', 'match_score'])->map(fn ($r) => (array) $r)->all()];
+    }
+
+    private function transactionHistory(int $clientId, int $days): array
+    {
+        return ['periode_jours' => $days, 'transactions' => DB::table('transactions as t')->join('accounts as a', 'a.id', '=', 't.account_id')
+            ->where('a.client_id', $clientId)->where('t.transaction_date', '>=', now()->subDays($days))->orderByDesc('t.transaction_date')->limit(50)
+            ->get(['t.transaction_reference', 't.transaction_type', 't.amount', 't.currency', 't.channel', 't.country_from', 't.country_to', 't.transaction_date'])->map(fn ($r) => (array) $r)->all()];
+    }
+
+    private function linkedAccountsNetwork(int $clientId, int $days): array
+    {
+        $client = DB::table('clients')->where('id', $clientId)->first(['phone', 'agency_id']);
+        if (!$client) return ['comptes_lies' => [], 'montant_cumule_reseau' => 0, 'seuil_depasse' => false];
+        $documentNumbers = DB::table('identity_documents')->where('client_id', $clientId)->pluck('document_number')->filter()->all();
+        $linked = DB::table('clients as c')->leftJoin('identity_documents as d', 'd.client_id', '=', 'c.id')
+            ->where('c.id', '!=', $clientId)->where(function ($q) use ($client, $documentNumbers) {
+                if ($client->phone) $q->orWhere('c.phone', $client->phone);
+                if ($documentNumbers !== []) $q->orWhereIn('d.document_number', $documentNumbers);
+            })->distinct()->limit(100)->pluck('c.id')->all();
+        $ids = array_values(array_unique([$clientId, ...$linked]));
+        $total = DB::table('transactions as t')->join('accounts as a', 'a.id', '=', 't.account_id')->whereIn('a.client_id', $ids)
+            ->where('t.transaction_date', '>=', now()->subDays($days))->sum('t.amount');
+        return ['periode_jours' => $days, 'comptes_lies' => DB::table('accounts')->whereIn('client_id', $ids)->get(['client_id', 'account_number', 'status'])->map(fn ($r) => (array) $r)->all(),
+            'montant_cumule_reseau' => (float) $total, 'seuil_reference' => 10000000, 'seuil_depasse' => (float) $total >= 10000000,
+            'criteres_utilises' => ['telephone', 'document_identite']];
+    }
+
+    private function mlScoreAndFactors(int $clientId): array
+    {
+        $prediction = DB::table('predictions')->where('client_id', $clientId)->orderByDesc('predicted_at')->first(['id', 'predicted_risk', 'probability', 'predicted_at']);
+        return ['prediction' => $prediction ? (array) $prediction : null,
+            'facteurs' => $prediction ? DB::table('prediction_explanations')->where('prediction_id', $prediction->id)->orderByDesc('importance_score')->limit(10)
+                ->get(['feature_name', 'feature_value', 'importance_score'])->map(fn ($r) => (array) $r)->all() : []];
+    }
+
+    private function normaliseName(string $value): string
+    {
+        $value = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value) ?: $value;
+        return preg_replace('/[^a-z0-9]+/', '', strtolower($value)) ?? '';
+    }
+
+    /**
+     * Consignes partagées par tous les fournisseurs. Elles réduisent le risque
+     * d'hallucination, sans remplacer le contrôle humain réglementaire.
+     */
+    private function groundingInstructions(string $factsJson, bool $isDossierQuestion): string
+    {
+        $today = now('Europe/Paris')->locale('fr')->isoFormat('dddd D MMMM YYYY');
+
+        $instructions = "Tu es Sentinelle Assist, un assistant conversationnel complet. Réponds naturellement en français. "
+            . "Nous sommes le {$today} (fuseau Europe/Paris). Utilise cette date si l'utilisateur demande quel jour nous sommes.\n\n"
+            . "Pour une salutation, une question générale, ou une demande ambiguë, réponds directement et de façon naturelle. "
+            . "Ne répète pas le dossier, les faits vérifiés ou un avertissement de conformité si la question ne le demande pas. "
+            . "Réponds avec du texte simple, sans Markdown et sans rubriques imposées.\n\n";
+
+        if (!$isDossierQuestion) {
+            return $instructions;
+        }
+
+        return $instructions
+            . "L'utilisateur pose une question sur l'alerte, le client, la transaction ou le dossier affiché : utilise exclusivement "
+            . "les données contenues dans FAITS_VERIFIES ci-dessous. N'invente aucun fait, aucune raison de déclenchement, aucun lien "
+            . "entre deux événements et aucun résultat de screening. Si une information de dossier n'est pas dans ces faits, indique-le. "
+            . "Dans ce seul cas, structure la réponse de façon utile entre faits, interprétation prudente et vérifications à effectuer. "
+            . "Ne prends jamais de décision réglementaire : la décision appartient à l'analyste humain.\n\n"
+            . "FAITS_VERIFIES :\n{$factsJson}";
+    }
+
+    private function isDossierQuestion(string $question): bool
+    {
+        return preg_match(
+            '/\\b(alerte|alert|client|transaction|dossier|compte|score|règle|regle|aml|pep|sanction|montant|virement|transfert|opération|operation|signal|risque)\\b/ui',
+            $question
+        ) === 1;
+    }
+
+    /** Données source, structurées et traçables, utilisées pour le chat. */
+    private function verifiedDossierFacts(string $type, object $context): array
+    {
+        $clientId = (int) ($context->client_id ?? 0);
+        $transactionId = (int) ($context->transaction_id ?? 0);
+
+        $facts = [
+            'scope' => $type,
+            'alert' => $type === 'alert' ? [
+                'id' => $context->alert_id ?? null,
+                'reference' => $context->alert_reference ?? null,
+                'type' => $context->alert_type ?? null,
+                'title' => $context->alert_title ?? null,
+                'priority' => $context->priority ?? null,
+                'status' => $context->alert_status ?? null,
+                'final_score' => $context->alert_final_score ?? null,
+                'created_at' => $context->alert_created_at ?? null,
+            ] : null,
+            'client' => [
+                'id' => $clientId ?: null,
+                'reference' => $context->client_number ?? null,
+                'risk_level' => $context->client_risk_level ?? $context->risk_level ?? null,
+                'risk_score' => $context->client_risk_score ?? $context->risk_score ?? null,
+                'pep_indicator' => (bool) ($context->is_pep ?? false),
+            ],
+            'transaction' => $transactionId > 0 ? [
+                'id' => $transactionId,
+                'reference' => $context->transaction_reference ?? null,
+                'type' => $context->transaction_type ?? null,
+                'amount' => $context->transaction_amount ?? null,
+                'currency' => $context->currency ?? null,
+                'channel' => $context->channel ?? null,
+                'date' => $context->transaction_date ?? null,
+            ] : null,
+        ];
+
+        $facts['rule_executions'] = $transactionId > 0
+            ? DB::table('rule_executions as re')
+                ->join('aml_rules as ar', 'ar.id', '=', 're.rule_id')
+                ->where('re.transaction_id', $transactionId)
+                ->orderBy('re.executed_at')
+                ->get(['ar.rule_code', 'ar.name', 'ar.description', 'ar.severity', 'ar.score', 're.execution_result', 're.executed_at'])
+                ->map(fn ($row) => (array) $row)->all()
+            : [];
+
+        $ruleIds = $transactionId > 0
+            ? DB::table('rule_executions')->where('transaction_id', $transactionId)->pluck('rule_id')
+            : collect();
+        $facts['rule_conditions_configuration'] = $ruleIds->isNotEmpty()
+            ? DB::table('rule_conditions')->whereIn('rule_id', $ruleIds)->get(['rule_id', 'field_name', 'operator', 'value'])
+                ->map(fn ($row) => (array) $row)->all()
+            : [];
+
+        $facts['risk_assessments'] = $transactionId > 0
+            ? DB::table('risk_assessments')->where('transaction_id', $transactionId)
+                ->orderByDesc('created_at')->get(['risk_type', 'score', 'risk_level', 'reason', 'source', 'created_at'])
+                ->map(fn ($row) => (array) $row)->all()
+            : [];
+        $facts['pep_matches'] = $clientId > 0
+            ? DB::table('pep_matches')->where('client_id', $clientId)
+                ->get(['pep_category', 'position', 'country', 'match_score'])->map(fn ($row) => (array) $row)->all()
+            : [];
+        $facts['sanction_matches'] = $clientId > 0
+            ? DB::table('sanction_matches')->where('client_id', $clientId)
+                ->get(['sanction_type', 'authority', 'reason', 'match_score'])->map(fn ($row) => (array) $row)->all()
+            : [];
+
+        return $facts;
     }
 
     private function buildAlertAssist(object $c, string $action): array

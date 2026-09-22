@@ -6,8 +6,7 @@ import axios from "axios";
 export const USE_MOCKS = false; // ← on passe en réel dès maintenant
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1",
-  timeout: 15000,
+  baseURL: "http://127.0.0.1:8000/api/v1",
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -30,7 +29,6 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
-      window.dispatchEvent(new Event("sentinelle-auth-changed"));
       // On ne redirige pas ici pour éviter les boucles ;
       // la protection de routes s'en charge.
     }
@@ -373,11 +371,17 @@ export const postAssist = async ({ object_type, object_id, action = "summarize" 
   return response.data;
 };
 
-export const postAssistChat = async ({ object_type, object_id, message }) => {
+export const postAssistChat = async ({
+  object_type,
+  object_id,
+  message,
+  history = [],
+}) => {
   const response = await api.post("/ml/chat", {
     object_type,
     object_id,
     message,
+    history,
   });
   return response.data;
 };

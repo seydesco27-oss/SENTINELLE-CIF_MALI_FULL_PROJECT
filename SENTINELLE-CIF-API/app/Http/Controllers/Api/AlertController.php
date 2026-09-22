@@ -1280,6 +1280,15 @@ class AlertController extends Controller
                 'a.id'
             );
 
+            // Le total affiché sur le tableau de bord ne doit pas dépendre
+            // de la limite de lignes renvoyées dans la file d’intervention.
+            $criticalTotal = (clone $query)
+                ->where(function ($criticalQuery) {
+                    $criticalQuery->whereRaw("UPPER(a.priority) = 'CRITICAL'")
+                        ->orWhere('a.final_score', '>=', 80);
+                })
+                ->count('a.id');
+
             /*
              * ----------------------------------------------------
              * DONNEES
@@ -1356,6 +1365,7 @@ class AlertController extends Controller
                 'summary' => [
                     'total' => $total,
                     'returned' => $alerts->count(),
+                    'critical_total' => $criticalTotal,
                     'critical_returned' => $critical,
                     'high_returned' => $high,
                 ],

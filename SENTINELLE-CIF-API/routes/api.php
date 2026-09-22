@@ -155,8 +155,8 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         'show'
     ]);
 
-       
-    
+
+
 // --- COMPLIANCE (mandats, PEP/RCA, KYC, moyennes, CENTIF assessments) ---
 
 Route::get('/clients/{id}/compliance/summary', [

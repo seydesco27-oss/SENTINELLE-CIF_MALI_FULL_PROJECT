@@ -67,7 +67,6 @@ export default function ComplianceDashboard({ user, onLogout, preview = false })
   const [search, setSearch] = useState("");
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [exportNotice, setExportNotice] = useState("");
-  const queue = useRef(null);
   const { data, loading, failures, updatedAt, refresh } = useComplianceData(preview, days);
   const filtered = useMemo(() => filterAlerts(data.alerts || [], { priority, search }), [data.alerts, priority, search]);
   const criticalCount = data.alerts?.filter((alert) => alert.priority === "CRITICAL").length;
@@ -88,9 +87,15 @@ export default function ComplianceDashboard({ user, onLogout, preview = false })
     setExportNotice(`${filtered.length} dossier${filtered.length > 1 ? "s" : ""} exporté${filtered.length > 1 ? "s" : ""}.`);
   }
 
+  function focusCriticalQueue() {
+    setPriority("CRITICAL");
+    setSearch("");
+    document.getElementById("compliance-queue")?.focus();
+  }
+
   const metrics = [
     { label: "Alertes à traiter", value: data.summary?.alerts?.open, note: "Alertes ouvertes du portefeuille", icon: "alert", tone: "amber", to: "/alertes" },
-    { label: "Priorité critique", value: criticalCount, note: "Dans la file prioritaire chargée", icon: "risk", tone: "red", action: () => { setPriority("CRITICAL"); setSearch(""); queue.current?.focus(); } },
+    { label: "Priorité critique", value: criticalCount, note: "Dans la file prioritaire chargée", icon: "risk", tone: "red", action: focusCriticalQueue },
     { label: "Investigations ouvertes", value: count(data.investigations), note: "Dossiers récents · 100 au maximum", icon: "investigation", tone: "green", to: "/investigations" },
     { label: "Clients à risque élevé", value: data.summary?.clients?.risky, note: `${number(data.summary?.clients?.total)} clients sous supervision`, icon: "clients", tone: "neutral", to: "/clients" },
   ];
@@ -112,10 +117,10 @@ export default function ComplianceDashboard({ user, onLogout, preview = false })
             {metrics.map((metric) => <article className={`co-metric co-tone-${metric.tone}`} key={metric.label}><div><span>{metric.label}</span><span className="co-metric-icon"><Icon name={metric.icon} size={17} /></span></div><strong className={loading ? "co-skeleton" : ""}>{loading ? " " : typeof metric.value === "string" ? metric.value : number(metric.value)}</strong><p>{metric.note}</p>{metric.action ? <button type="button" className="co-metric-link" onClick={metric.action} aria-label="Filtrer les alertes critiques"><Icon name="arrowUp" size={16} /></button> : <Link className="co-metric-link" to={href(metric.to)} aria-label={`Consulter : ${metric.label}`}><Icon name="arrowUp" size={16} /></Link>}</article>)}
           </section>
 
-          {!loading && criticalCount > 0 && <div className="co-attention"><span className="co-attention-icon"><Icon name="alert" size={18} /></span><p><strong>{criticalCount} dossier{criticalCount > 1 ? "s" : ""} critique{criticalCount > 1 ? "s" : ""} à examiner</strong><span>Commencez par les signaux les plus sensibles de votre file.</span></p><button type="button" onClick={() => { setPriority("CRITICAL"); setSearch(""); queue.current?.focus(); }}>Examiner les dossiers <Icon name="arrow" size={16} /></button></div>}
+          {!loading && criticalCount > 0 && <div className="co-attention"><span className="co-attention-icon"><Icon name="alert" size={18} /></span><p><strong>{criticalCount} dossier{criticalCount > 1 ? "s" : ""} critique{criticalCount > 1 ? "s" : ""} à examiner</strong><span>Commencez par les signaux les plus sensibles de votre file.</span></p><button type="button" onClick={focusCriticalQueue}>Examiner les dossiers <Icon name="arrow" size={16} /></button></div>}
 
           <div className="co-work-grid">
-            <section className="co-panel co-queue" ref={queue} tabIndex={-1} aria-labelledby="queue-title" aria-busy={loading}>
+            <section id="compliance-queue" className="co-panel co-queue" tabIndex={-1} aria-labelledby="queue-title" aria-busy={loading}>
               <div className="co-panel-heading"><div><p className="co-overline">À VOTRE ATTENTION</p><h2 id="queue-title">File prioritaire <span className="co-count">{data.alerts ? data.alerts.length : "—"}</span></h2></div><Link to={href("/alertes")} className="co-text-link">Toutes les alertes <Icon name="arrow" size={14} /></Link></div>
               <div className="co-queue-toolbar"><div className="co-segments" role="group" aria-label="Filtrer par priorité">{[["ALL", "Toutes"], ["CRITICAL", "Critiques"], ["HIGH", "Élevées"]].map(([value, label]) => <button key={value} type="button" aria-pressed={priority === value} onClick={() => setPriority(value)}>{value === "CRITICAL" && <i />}{label}</button>)}</div><label className="co-search"><Icon name="search" size={15} /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Client, référence…" aria-label="Rechercher dans la file prioritaire" /></label></div>
               <div className="co-table-wrap"><table className="co-table"><thead><tr><th scope="col">Client / signal détecté</th><th scope="col">Priorité</th><th scope="col">Score</th><th scope="col"><span className="co-sr-only">Consulter</span></th></tr></thead><tbody>
