@@ -120,6 +120,8 @@ class GroqChatClient
         return str_contains($message, 'HTTP 429')
             || str_contains($message, 'HTTP 503')
             || str_contains($message, 'HTTP 502')
+            || str_contains($message, 'HTTP 400')
+            || str_contains($message, 'HTTP 404')
             || $e instanceof ConnectionException;
     }
 }
