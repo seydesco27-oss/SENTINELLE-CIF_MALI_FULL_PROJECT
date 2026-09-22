@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
+use App\Services\MlRiskScoringService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -122,6 +124,7 @@ class TransactionController extends Controller
                     't.reversal_of_transaction_id',
                     't.created_at',
                 ]);
+            AgencyAccess::constrain($query, $request, 't.agency_id');
 
 
             /*
@@ -270,6 +273,12 @@ class TransactionController extends Controller
                 ->limit($limit)
                 ->get();
 
+            if (AgencyAccess::restrictedAgencyId($request) !== null) {
+                $transactions->each(function ($transaction): void {
+                    unset($transaction->is_pep, $transaction->risk_score);
+                });
+            }
+
 
             return response()->json([
                 'success' => true,
@@ -312,23 +321,30 @@ class TransactionController extends Controller
      * La vue v_ml_transaction_features est utilisée comme source
      * principale des caractéristiques AML/ML.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
+            $restrictedAgencyId = AgencyAccess::restrictedAgencyId($request);
+            if ($restrictedAgencyId !== null && ! DB::table('transactions')
+                ->where('id', $id)
+                ->where('agency_id', $restrictedAgencyId)
+                ->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transaction introuvable.',
+                ], 404);
+            }
 
             /*
              * ====================================================
              * TRANSACTION + FEATURES AML / ML
              * ====================================================
              */
-            $transaction = DB::table(
-                'v_ml_transaction_features'
-            )
-                ->where(
-                    'transaction_id',
-                    $id
-                )
-                ->first();
+            $transaction = $restrictedAgencyId === null
+                ? DB::table('v_ml_transaction_features')
+                    ->where('transaction_id', $id)
+                    ->first()
+                : null;
 
 
             /*
@@ -401,6 +417,20 @@ class TransactionController extends Controller
                         $id
                     )
                     ->first();
+            }
+
+            if ($restrictedAgencyId !== null) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'transaction' => $transaction,
+                        'aml' => null,
+                        'alerts' => [],
+                        'risk_assessments' => [],
+                        'rule_executions' => [],
+                        'ml_label' => null,
+                    ],
+                ]);
             }
 
 
@@ -1131,6 +1161,22 @@ class TransactionController extends Controller
 
             $transactionId = (int) $out->transaction_id;
 
+            $mlAnalysis = null;
+            $mlWarning = null;
+            try {
+                $linkedAlertId = DB::table('alerts')
+                    ->where('transaction_id', $transactionId)
+                    ->value('id');
+                $mlAnalysis = app(MlRiskScoringService::class)->scoreTransaction(
+                    $transactionId,
+                    $linkedAlertId ? (int) $linkedAlertId : null
+                );
+            } catch (Throwable $mlError) {
+                // L'enregistrement métier reste valide si le microservice est
+                // momentanément indisponible; l'alerte pourra être rescannée.
+                $mlWarning = $mlError->getMessage();
+            }
+
             $account = DB::table('accounts')->where('id', $accountId)->first(['id', 'current_balance', 'account_number']);
 
             $ruleExecutions = DB::table('rule_executions')
@@ -1160,6 +1206,8 @@ class TransactionController extends Controller
                     'rule_executions_count' => $ruleExecutions,
                     'risk_assessments' => $riskAssessments,
                     'alerts' => $alerts,
+                    'ml_analysis' => $mlAnalysis,
+                    'ml_warning' => $mlWarning,
                 ],
             ], 201);
 

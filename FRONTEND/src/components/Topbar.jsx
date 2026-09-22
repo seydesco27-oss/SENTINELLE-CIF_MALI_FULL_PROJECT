@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getUserDisplayName, getUserInitials } from "../auth/access";
 import "./Topbar.css";
 
 export default function Topbar({ breadcrumb = [], user, notifCount = 0 }) {
@@ -30,9 +31,9 @@ export default function Topbar({ breadcrumb = [], user, notifCount = 0 }) {
 
         <div className="topbar-user" onClick={() => setShowMenu((s) => !s)}>
           <div className="topbar-user-avatar">
-            {(user?.username || "AC").slice(0, 2).toUpperCase()}
+            {getUserInitials(user)}
           </div>
-          <span className="topbar-user-name">{user?.username || "a.coulibaly"}</span>
+          <span className="topbar-user-name">{getUserDisplayName(user)}</span>
           <span className="topbar-user-caret">▾</span>
 
           {showMenu && (

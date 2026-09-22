@@ -53,13 +53,12 @@ Le chatbot utilise l'API Groq compatible OpenAI :
 LLM_PROVIDER=groq
 GROQ_API_KEY=ta_cle_groq
 LLM_BASE_URL=https://api.groq.com/openai/v1
-LLM_MODEL=llama-3.3-70b-versatile
-LLM_FALLBACK_MODELS=llama-3.1-8b-instant,openai/gpt-oss-20b
+LLM_MODEL=openai/gpt-oss-120b
+LLM_FALLBACK_MODELS=qwen/qwen3.8-27b,openai/gpt-oss-20b
 ```
 
-`openai/gpt-oss-20b` est trop limité (~8 000 tokens/min) pour l’agent avec outils.
-Le modèle principal et les modèles de secours ont des quotas séparés : un 429
-bascule automatiquement, avec retries, sans bloquer l’analyste.
+Les modèles principal et de secours ont des quotas séparés : une limite de débit
+ou un modèle inaccessible provoque une bascule automatique sans inventer de réponse locale.
 
 Après toute modification de `.env` :
 

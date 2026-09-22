@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\MlRiskScoringService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -326,6 +327,7 @@ class AlertController extends Controller
                     'aa.alert_id',
                     'aa.user_id',
                     'u.username',
+                    DB::raw("COALESCE(NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''), u.username) as user_name"),
                     'aa.action_type',
                     'aa.comment',
                     'aa.created_at',
@@ -344,6 +346,7 @@ class AlertController extends Controller
                     'i.alert_id',
                     'i.assigned_user',
                     'u.username as assigned_username',
+                    DB::raw("COALESCE(NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''), u.username) as assigned_name"),
                     'i.decision',
                     'i.comment',
                     'i.started_at',
@@ -377,6 +380,10 @@ class AlertController extends Controller
                     ->get();
             }
 
+            $mlAnalysis = $alert->transaction_id !== null
+                ? app(MlRiskScoringService::class)->latestForTransaction((int) $alert->transaction_id)
+                : null;
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -384,6 +391,7 @@ class AlertController extends Controller
                     'actions' => $actions,
                     'investigations' => $investigations,
                     'risk_assessments' => $riskAssessments,
+                    'ml_analysis' => $mlAnalysis,
                 ],
             ]);
 
@@ -394,6 +402,28 @@ class AlertController extends Controller
                 'message' => 'Erreur lors de la récupération du détail de l’alerte.',
                 'error' => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Exécute le modèle ML sur la transaction liée et enregistre le résultat.
+     *
+     * POST /api/v1/alerts/{id}/ml-score
+     */
+    public function scoreWithMl(int $id, MlRiskScoringService $scoring): JsonResponse
+    {
+        try {
+            return response()->json([
+                'success' => true,
+                'message' => 'Scoring ML exécuté et enregistré.',
+                'data' => $scoring->scoreAlert($id),
+            ]);
+        } catch (Throwable $error) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Le scoring ML de cette alerte a échoué.',
+                'error' => $error->getMessage(),
+            ], 502);
         }
     }
 

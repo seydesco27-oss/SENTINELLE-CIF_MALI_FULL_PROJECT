@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import DemoRail from "../components/DemoRail";
 import { getAccounts } from "../services/api";
+import { canAccess } from "../auth/access";
 import "./AccountsList.css";
 
 const STATUS_OPTS = [
@@ -78,6 +79,7 @@ function formatDate(value) {
 
 export default function AccountsList({ user, onLogout }) {
   const navigate = useNavigate();
+  const canViewCompliance = canAccess(user, "risk_analysis");
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -135,6 +137,10 @@ export default function AccountsList({ user, onLogout }) {
       ).length,
     [accounts]
   );
+  const totalBalance = useMemo(
+    () => accounts.reduce((sum, account) => sum + (Number(account.current_balance) || 0), 0),
+    [accounts]
+  );
 
   return (
     <div className="app-shell">
@@ -148,7 +154,9 @@ export default function AccountsList({ user, onLogout }) {
               <p className="eyebrow">DONNÉES / COMPTES</p>
               <h1>Registre des comptes</h1>
               <p>
-                Comptes rattachés au portefeuille · soldes et statut de tenue.
+                {canViewCompliance
+                  ? "Comptes rattachés au portefeuille · soldes et statut de tenue."
+                  : `Comptes rattachés à ${user?.agency?.name || "votre agence"}.`}
               </p>
             </div>
           </header>
@@ -168,12 +176,16 @@ export default function AccountsList({ user, onLogout }) {
                 note: "Tenue ouverte",
                 accent: true,
               },
-              {
+              ...(canViewCompliance ? [{
                 label: "CLIENT RISQUE ÉLEVÉ+",
                 value: highRiskCount,
                 note: "HIGH / CRITICAL",
                 danger: true,
-              },
+              }] : [{
+                label: "SOLDE CUMULÉ",
+                value: formatAmount(totalBalance),
+                note: "Comptes affichés",
+              }]),
             ].map((item) => (
               <div
                 key={item.label}
@@ -257,7 +269,7 @@ export default function AccountsList({ user, onLogout }) {
                       <th>CLIENT</th>
                       <th>TYPE</th>
                       <th>STATUT</th>
-                      <th>RISQUE CLIENT</th>
+                      {canViewCompliance && <th>RISQUE CLIENT</th>}
                       <th>SOLDE</th>
                       <th>OUVERT LE</th>
                     </tr>
@@ -265,7 +277,7 @@ export default function AccountsList({ user, onLogout }) {
                   <tbody>
                     {accounts.length === 0 ? (
                       <tr>
-                        <td className="empty-cell" colSpan={7}>
+                        <td className="empty-cell" colSpan={canViewCompliance ? 7 : 6}>
                           Aucun compte pour ce périmètre.
                         </td>
                       </tr>
@@ -299,7 +311,7 @@ export default function AccountsList({ user, onLogout }) {
                             <td>
                               <StatusBadge status={a.status} />
                             </td>
-                            <td>
+                            {canViewCompliance && <td>
                               <RiskBadge
                                 level={
                                   a.client_risk_level ||
@@ -307,7 +319,7 @@ export default function AccountsList({ user, onLogout }) {
                                   a.client?.risk_level
                                 }
                               />
-                            </td>
+                            </td>}
                             <td className="mono">
                               {formatAmount(
                                 a.current_balance ?? a.balance,
@@ -326,8 +338,8 @@ export default function AccountsList({ user, onLogout }) {
               </div>
             )}
             <div className="ac-footer-note">
-              {accounts.length} compte{accounts.length !== 1 ? "s" : ""} · API
-              /accounts · soldes selon dernière synchro
+              {accounts.length} compte{accounts.length !== 1 ? "s" : ""} affiché
+              {accounts.length !== 1 ? "s" : ""} · soldes selon la dernière synchronisation
             </div>
           </div>
         </section>

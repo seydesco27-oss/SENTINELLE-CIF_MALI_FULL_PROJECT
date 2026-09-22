@@ -21,7 +21,7 @@ class GroqChatClient
             throw new RuntimeException('GROQ_API_KEY absente.');
         }
 
-        $url = $this->baseUrl() . '/chat/completions';
+        $url = $this->baseUrl().'/chat/completions';
         $models = $forcedModel ? [$forcedModel] : $this->models();
         $last = null;
 
@@ -34,7 +34,7 @@ class GroqChatClient
                 return $json;
             } catch (Throwable $e) {
                 $last = $e;
-                if (!$this->shouldTryNextModel($e)) {
+                if (! $this->shouldTryNextModel($e)) {
                     throw $e;
                 }
             }
@@ -45,12 +45,12 @@ class GroqChatClient
 
     public function models(): array
     {
-        $primary = (string) config('services.groq.model', 'llama-3.3-70b-versatile');
+        $primary = (string) config('services.groq.model', 'openai/gpt-oss-120b');
         $fallbacks = config('services.groq.fallback_models', []);
         if (is_string($fallbacks)) {
             $fallbacks = array_filter(array_map('trim', explode(',', $fallbacks)));
         }
-        if (!is_array($fallbacks)) {
+        if (! is_array($fallbacks)) {
             $fallbacks = [];
         }
 
@@ -72,10 +72,7 @@ class GroqChatClient
         $http = Http::withToken($this->apiKey())
             ->acceptJson()
             ->timeout(45)
-            ->connectTimeout(12)
-            ->retry(3, 800, function (Throwable $exception): bool {
-                return $exception instanceof ConnectionException;
-            });
+            ->connectTimeout(8);
 
         $ca = (string) config('services.groq.ca_bundle', storage_path('certificates/cacert.pem'));
         if ($ca !== '' && is_file($ca)) {
@@ -87,30 +84,63 @@ class GroqChatClient
 
     private function postWithRetries(string $url, array $payload): array
     {
-        $attempts = 4;
+        // Retry once on transient failures. A rate limit is handled faster by
+        // switching to the next model, whose Groq quota is independent.
+        $attempts = 2;
         for ($i = 1; $i <= $attempts; $i++) {
-            $response = $this->http()->post($url, $payload);
+            try {
+                $response = $this->http()->post($url, $payload);
+            } catch (ConnectionException $e) {
+                if ($i < $attempts) {
+                    usleep(500_000);
+
+                    continue;
+                }
+
+                throw $e;
+            }
+
             if ($response->successful()) {
                 $json = $response->json();
-                if (!is_array($json)) {
+                if (! is_array($json) || ! isset($json['choices'][0]['message'])) {
                     throw new RuntimeException('Réponse LLM vide ou non conforme.');
+                }
+                $message = $json['choices'][0]['message'];
+                $hasContent = trim((string) ($message['content'] ?? '')) !== '';
+                $hasToolCalls = is_array($message['tool_calls'] ?? null)
+                    && $message['tool_calls'] !== [];
+                if (! $hasContent && ! $hasToolCalls) {
+                    throw new RuntimeException('Réponse LLM vide ou non conforme.');
+                }
+                if (($json['choices'][0]['finish_reason'] ?? '') === 'length') {
+                    throw new RuntimeException('Réponse LLM tronquée.');
                 }
 
                 return $json;
             }
 
             $status = $response->status();
-            if (in_array($status, [429, 502, 503], true) && $i < $attempts) {
+            if (in_array($status, [502, 503, 504], true) && $i < $attempts) {
                 $retryAfter = (int) $response->header('Retry-After');
-                $wait = $retryAfter > 0 ? min($retryAfter, 12) : min(12, 2 ** $i);
+                $wait = $retryAfter > 0 ? min($retryAfter, 2) : 1;
                 sleep(max(1, $wait));
+
                 continue;
             }
 
-            throw new RuntimeException('Réponse fournisseur: HTTP ' . $status);
+            // Le corps peut répéter le prompt ou des données CIF. On ne
+            // remonte que le statut et le code technique du fournisseur.
+            $code = preg_replace(
+                '/[^a-zA-Z0-9_-]/',
+                '',
+                (string) $response->json('error.code', '')
+            );
+            throw new RuntimeException(
+                'Réponse fournisseur: HTTP '.$status.($code !== '' ? ' code='.$code : '')
+            );
         }
 
-        throw new RuntimeException('Réponse fournisseur: HTTP 429');
+        throw new RuntimeException('Réponse fournisseur indisponible.');
     }
 
     private function shouldTryNextModel(Throwable $e): bool
@@ -120,8 +150,11 @@ class GroqChatClient
         return str_contains($message, 'HTTP 429')
             || str_contains($message, 'HTTP 503')
             || str_contains($message, 'HTTP 502')
-            || str_contains($message, 'HTTP 400')
+            || str_contains($message, 'HTTP 504')
+            || str_contains($message, 'code=tool_use_failed')
             || str_contains($message, 'HTTP 404')
+            || str_contains($message, 'Réponse LLM vide')
+            || str_contains($message, 'Réponse LLM tronquée')
             || $e instanceof ConnectionException;
     }
 }

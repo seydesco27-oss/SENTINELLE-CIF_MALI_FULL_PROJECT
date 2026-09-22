@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,7 @@ class AccountController extends Controller
                     DB::raw("(SELECT COALESCE(SUM(t.amount),0) FROM transactions t WHERE t.account_id = a.id AND UPPER(COALESCE(t.transaction_status,'COMPLETED')) NOT IN ('CANCELLED','CANCELED','REVERSED','VOID')) AS transaction_volume"),
                     DB::raw('(SELECT COUNT(*) FROM alerts al WHERE al.client_id = a.client_id) AS alert_count'),
                 ]);
+            AgencyAccess::constrain($query, $request, 'c.agency_id');
 
             if ($request->filled('status')) $query->where('a.status', strtoupper(trim($request->query('status'))));
             if ($request->filled('account_type')) $query->where('a.account_type', $request->query('account_type'));
@@ -61,6 +63,16 @@ class AccountController extends Controller
             }
 
             $accounts = $query->orderByDesc('a.id')->limit($limit)->get();
+            if (AgencyAccess::restrictedAgencyId($request) !== null) {
+                $accounts->each(function ($account): void {
+                    unset(
+                        $account->is_pep,
+                        $account->risk_score,
+                        $account->risk_level,
+                        $account->alert_count
+                    );
+                });
+            }
 
             return response()->json(['success' => true, 'count' => $accounts->count(), 'data' => $accounts]);
         } catch (Throwable $e) {
@@ -68,10 +80,10 @@ class AccountController extends Controller
         }
     }
 
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
-            $account = DB::table('accounts as a')
+            $accountQuery = DB::table('accounts as a')
                 ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
                 ->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
                 ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
@@ -93,7 +105,9 @@ class AccountController extends Controller
                     'ci.first_name', 'ci.last_name', 'ci.gender', 'ci.birth_date', 'ci.nationality', 'ci.profession', 'ci.activity_sector',
                     'ce.legal_name', 'ce.entity_type', 'ce.nationality as entity_nationality', 'ce.activity_sector as entity_activity_sector',
                 ])
-                ->where('a.id', $id)->first();
+                ->where('a.id', $id);
+            AgencyAccess::constrain($accountQuery, $request, 'c.agency_id');
+            $account = $accountQuery->first();
 
             if (!$account) {
                 return response()->json(['success' => false, 'message' => 'Compte introuvable.'], 404);
@@ -109,6 +123,16 @@ class AccountController extends Controller
             $riskAssessmentCount = DB::table('risk_assessments as ra')
                 ->join('transactions as t', 't.id', '=', 'ra.transaction_id')
                 ->where('t.account_id', $id)->count();
+
+            $isRestrictedAgent = AgencyAccess::restrictedAgencyId($request) !== null;
+            if ($isRestrictedAgent) {
+                unset(
+                    $account->is_pep,
+                    $account->risk_score,
+                    $account->risk_level,
+                    $account->risk_level_label
+                );
+            }
 
             return response()->json([
                 'success' => true,
@@ -129,8 +153,8 @@ class AccountController extends Controller
                         'transaction_count' => (int) ($statistics->transaction_count ?? 0),
                         'transaction_volume' => $statistics->transaction_volume ?? 0,
                         'average_transaction_amount' => $statistics->average_transaction_amount ?? 0,
-                        'alert_count' => $alertCount,
-                        'risk_assessment_count' => $riskAssessmentCount,
+                        'alert_count' => $isRestrictedAgent ? null : $alertCount,
+                        'risk_assessment_count' => $isRestrictedAgent ? null : $riskAssessmentCount,
                     ],
                 ],
             ]);

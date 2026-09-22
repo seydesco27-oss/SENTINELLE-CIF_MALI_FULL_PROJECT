@@ -1,6 +1,95 @@
-import { useEffect, useState } from "react";
-import { postAssist, postAssistChat, postMlScore } from "../services/api";
+import { useEffect, useRef, useState } from "react";
+import { postAssistChat, postMlScore } from "../services/api";
 import "./AssistPanel.css";
+
+function renderInline(text) {
+  return String(text)
+    .split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
+    .filter(Boolean)
+    .map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={index}>{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return <code key={index}>{part.slice(1, -1)}</code>;
+      }
+      return part;
+    });
+}
+
+function AssistantContent({ content }) {
+  const lines = String(content || "").replace(/\r/g, "").split("\n");
+  const blocks = [];
+  const isTitle = (line) =>
+    /^#{1,4}\s+/.test(line) || /^\*\*[^*]+\*\*$/.test(line);
+  const isBullet = (line) => /^[-•]\s+/.test(line);
+  const isNumbered = (line) => /^\d+[.)]\s+/.test(line);
+
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index].trim();
+    if (!line) {
+      index += 1;
+      continue;
+    }
+    if (/^(---+|___+|\*\*\*+)$/.test(line)) {
+      index += 1;
+      continue;
+    }
+
+    if (isTitle(line)) {
+      blocks.push({
+        type: "title",
+        text: line.replace(/^#{1,4}\s+/, "").replace(/^\*\*|\*\*$/g, ""),
+      });
+      index += 1;
+      continue;
+    }
+
+    if (isBullet(line) || isNumbered(line)) {
+      const numbered = isNumbered(line);
+      const items = [];
+      while (index < lines.length) {
+        const item = lines[index].trim();
+        if (numbered ? !isNumbered(item) : !isBullet(item)) break;
+        items.push(item.replace(numbered ? /^\d+[.)]\s+/ : /^[-•]\s+/, ""));
+        index += 1;
+      }
+      blocks.push({ type: numbered ? "ordered" : "list", items });
+      continue;
+    }
+
+    const paragraph = [line];
+    index += 1;
+    while (index < lines.length) {
+      const next = lines[index].trim();
+      if (!next || isTitle(next) || isBullet(next) || isNumbered(next)) break;
+      paragraph.push(next);
+      index += 1;
+    }
+    blocks.push({ type: "paragraph", text: paragraph.join(" ") });
+  }
+
+  return (
+    <div className="assist-rich-answer">
+      {blocks.map((block, index) => {
+        if (block.type === "title") {
+          return <h4 key={index}>{renderInline(block.text)}</h4>;
+        }
+        if (block.type === "list" || block.type === "ordered") {
+          const List = block.type === "ordered" ? "ol" : "ul";
+          return (
+            <List key={index}>
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex}>{renderInline(item)}</li>
+              ))}
+            </List>
+          );
+        }
+        return <p key={index}>{renderInline(block.text)}</p>;
+      })}
+    </div>
+  );
+}
 
 /**
  * Sentinelle Assist — tiroir droit repliable (agent de conformité)
@@ -33,6 +122,7 @@ export default function AssistPanel({
   const [result, setResult] = useState(null);
   const [mlScore, setMlScore] = useState(null);
   const [question, setQuestion] = useState("");
+  const conversationEndRef = useRef(null);
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -56,26 +146,22 @@ export default function AssistPanel({
   }, [objectType, objectId]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  useEffect(() => {
+    conversationEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }, [messages, loading]);
+
   async function run(act) {
-    if (!objectId) return;
-    setLoading(true);
-    setError("");
-    try {
-      const res = await postAssist({
-        object_type: objectType,
-        object_id: Number(objectId),
-        action: act,
-      });
-      if (res?.success) setResult(res.data);
-      else setError(res?.message || "Assist indisponible.");
-    } catch (err) {
-      setError(
-        err.response?.data?.message ||
-          "Impossible de contacter Sentinelle Assist (API)."
-      );
-    } finally {
-      setLoading(false);
-    }
+    const prompts = {
+      summarize: "Résume le dossier en cours à partir des données vérifiées.",
+      explain: "Explique les signaux et les règles déclenchées dans le dossier en cours.",
+      suggest_questions: "Propose les prochaines vérifications de diligence pour le dossier en cours.",
+      draft_centif: "Prépare un brouillon CENTIF factuel à partir du dossier en cours.",
+    };
+    if (!objectId || !prompts[act]) return;
+    await runChat(prompts[act]);
   }
 
   async function runMlScore() {
@@ -83,10 +169,10 @@ export default function AssistPanel({
     setError("");
     try {
       const body =
-        transactionId != null
-          ? { transaction_id: Number(transactionId) }
-          : objectType === "alert"
-            ? { alert_id: Number(objectId) }
+        objectType === "alert"
+          ? { alert_id: Number(objectId) }
+          : transactionId != null
+            ? { transaction_id: Number(transactionId) }
           : objectType === "client"
             ? { client_id: Number(objectId) }
             : {};
@@ -97,7 +183,7 @@ export default function AssistPanel({
           ...current,
           {
             role: "assistant",
-            content: `Score ML calculé : ${res.data?.label || "indisponible"}. Score final : ${res.data?.final_score != null ? Number(res.data.final_score).toFixed(2) : "—"}.`,
+            content: `Analyse ML enregistrée. Modèle : ${res.data?.model_score != null ? Number(res.data.model_score).toFixed(1) : "—"}/100. Score opérationnel : ${res.data?.operational_score != null ? Number(res.data.operational_score).toFixed(1) : "—"}/100 (${res.data?.risk_level || "niveau indisponible"}).`,
           },
         ]);
       }
@@ -113,7 +199,7 @@ export default function AssistPanel({
   }
 
   async function runChat(message) {
-    if (!objectId || !message) return;
+    if (loading || !message) return;
     setLoading(true);
     setError("");
     // Le message d'accueil est une aide UI, pas un tour réellement produit
@@ -128,8 +214,8 @@ export default function AssistPanel({
     ]);
     try {
       const res = await postAssistChat({
-        object_type: objectType,
-        object_id: Number(objectId),
+        object_type: objectId ? objectType : "general",
+        object_id: objectId ? Number(objectId) : null,
         message,
         history: nextHistory,
       });
@@ -142,6 +228,8 @@ export default function AssistPanel({
           {
             role: "assistant",
             content: res.data?.message || "Réponse contextuelle disponible.",
+            sources: res.data?.sources || [],
+            model: res.data?.model || null,
           },
         ]);
       } else {
@@ -160,15 +248,10 @@ export default function AssistPanel({
   function onAsk(e) {
     e.preventDefault();
     const text = question.trim();
-    const q = text.toLowerCase();
-    if (!q) return;
-    // "AML" contient les lettres "ml" : une recherche de sous-chaîne
-    // envoyait donc à tort les questions sur les alertes vers le scoring.
-    const asksForScore = /\b(score|scoring)\b|\bmod[eè]le\s+ml\b|\bmachine learning\b/i.test(q);
-    if (asksForScore) {
-      setMessages((current) => [...current, { role: "user", content: text }]);
-      runMlScore();
-    } else runChat(text);
+    if (!text || loading) return;
+    // Le modèle choisit lui-même les recherches à exécuter, y compris pour
+    // les questions de score ML. Le bouton « Score ML » reste un raccourci.
+    runChat(text);
     setQuestion("");
   }
 
@@ -284,9 +367,34 @@ export default function AssistPanel({
                   key={`${message.role}-${index}`}
                 >
                   <span>{message.role === "user" ? "Vous" : "Assist"}</span>
-                  <p>{message.content}</p>
+                  {message.role === "assistant" ? (
+                    <>
+                      <AssistantContent content={message.content} />
+                      {Array.isArray(message.sources) && message.sources.length > 0 && (
+                        <div className="assist-answer-meta">
+                          <span aria-hidden="true">✓</span>
+                          {message.sources.includes("session_authentifiee")
+                            ? "Identité de session vérifiée"
+                            : `Base interrogée · ${message.sources.length} vérification${message.sources.length > 1 ? "s" : ""}`}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p>{message.content}</p>
+                  )}
                 </div>
               ))}
+              {loading && (
+                <div className="assist-message is-assistant is-loading" aria-label="Analyse en cours">
+                  <span>Assist</span>
+                  <div className="assist-typing" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </div>
+                </div>
+              )}
+              <div ref={conversationEndRef} />
             </div>
           )}
 
@@ -295,10 +403,10 @@ export default function AssistPanel({
               <h4>Score ML (couche 2)</h4>
               <div className="assist-ml-grid">
                 <div>
-                  <span>Final</span>
+                  <span>Opérationnel</span>
                   <strong>
-                    {mlScore.final_score != null
-                      ? Number(mlScore.final_score).toFixed(2)
+                    {mlScore.operational_score != null
+                      ? Number(mlScore.operational_score).toFixed(1)
                       : "—"}
                   </strong>
                 </div>
@@ -306,7 +414,7 @@ export default function AssistPanel({
                   <span>Modèle</span>
                   <strong>
                     {mlScore.model_score != null
-                      ? Number(mlScore.model_score).toFixed(2)
+                      ? Number(mlScore.model_score).toFixed(1)
                       : "—"}
                   </strong>
                 </div>
@@ -314,18 +422,22 @@ export default function AssistPanel({
                   <span>Règles</span>
                   <strong>
                     {mlScore.rule_score != null
-                      ? Number(mlScore.rule_score).toFixed(2)
+                      ? Number(mlScore.rule_score).toFixed(1)
                       : "—"}
                   </strong>
                 </div>
                 <div>
-                  <span>Niveau</span>
-                  <strong>{mlScore.label || "—"}</strong>
+                  <span>Fusion</span>
+                  <strong>
+                    {mlScore.fused_score != null
+                      ? Number(mlScore.fused_score).toFixed(1)
+                      : "—"}
+                  </strong>
                 </div>
               </div>
               <p className="assist-disclaimer">
-                Signal de priorisation uniquement. Moteur :{" "}
-                {mlScore.engine || "n/d"}
+                Niveau retenu : {mlScore.risk_level || "—"}. Signal de
+                priorisation uniquement. Moteur : {mlScore.engine || "n/d"}
               </p>
             </div>
           )}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { login } from "../services/api";
+import { getDefaultRoute } from "../auth/access";
 import "./Login.css";
 
 export default function Login() {
@@ -29,7 +30,7 @@ export default function Login() {
           localStorage.removeItem("keepSession");
         }
         window.dispatchEvent(new Event("sentinelle-auth-changed"));
-        navigate("/dashboard", { replace: true });
+        navigate(getDefaultRoute(res.data.user), { replace: true });
       } else {
         setError(res.message || "Connexion impossible.");
       }

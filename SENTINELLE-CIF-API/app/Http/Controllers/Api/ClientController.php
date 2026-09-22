@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,7 @@ class ClientController extends Controller
     {
         try {
             $query = DB::table('v_customer_aml_profile');
+            AgencyAccess::constrain($query, $request, 'client_agency_id');
 
             /*
              * Recherche générale
@@ -106,11 +108,47 @@ class ClientController extends Controller
             );
 
             $clients = $query->paginate($perPage);
+            $items = $clients->items();
+
+            // La vue historique expose par erreur le nombre de comptes sous
+            // `transaction_count`. Recalculer le compteur réel évite une
+            // incohérence entre les indicateurs et l'historique affiché.
+            $clientIds = collect($items)
+                ->pluck('client_id')
+                ->filter()
+                ->values();
+
+            $transactionCounts = $clientIds->isEmpty()
+                ? collect()
+                : DB::table('accounts as a')
+                    ->leftJoin('transactions as t', 't.account_id', '=', 'a.id')
+                    ->whereIn('a.client_id', $clientIds)
+                    ->groupBy('a.client_id')
+                    ->select(
+                        'a.client_id',
+                        DB::raw('COUNT(t.id) as transaction_count')
+                    )
+                    ->pluck('transaction_count', 'a.client_id');
+
+            foreach ($items as $item) {
+                $item->transaction_count = (int) ($transactionCounts[$item->client_id] ?? 0);
+            }
+
+            if (AgencyAccess::restrictedAgencyId($request) !== null) {
+                foreach ($items as $item) {
+                    unset(
+                        $item->is_pep,
+                        $item->risk_level,
+                        $item->risk_score,
+                        $item->alert_count
+                    );
+                }
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Clients récupérés avec succès.',
-                'data' => $clients->items(),
+                'data' => $items,
                 'meta' => [
                     'current_page' => $clients->currentPage(),
                     'last_page' => $clients->lastPage(),
@@ -135,7 +173,7 @@ class ClientController extends Controller
      *
      * Profil AML complet d'un client.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
 
@@ -151,9 +189,10 @@ class ClientController extends Controller
              * transactions
              * alerts
              */
-            $profile = DB::table('v_customer_aml_profile')
-                ->where('client_id', $id)
-                ->first();
+            $profileQuery = DB::table('v_customer_aml_profile')
+                ->where('client_id', $id);
+            AgencyAccess::constrain($profileQuery, $request, 'client_agency_id');
+            $profile = $profileQuery->first();
 
             if (!$profile) {
                 return response()->json([
@@ -191,11 +230,14 @@ class ClientController extends Controller
             /*
              * Alertes du client
              */
-            $alerts = DB::table('alerts')
-                ->where('client_id', $id)
-                ->orderByDesc('created_at')
-                ->limit(100)
-                ->get();
+            $isRestrictedAgent = AgencyAccess::restrictedAgencyId($request) !== null;
+            $alerts = $isRestrictedAgent
+                ? collect()
+                : DB::table('alerts')
+                    ->where('client_id', $id)
+                    ->orderByDesc('created_at')
+                    ->limit(100)
+                    ->get();
 
 
             /*
@@ -216,13 +258,30 @@ class ClientController extends Controller
                 ->limit(100)
                 ->get();
 
+            $profile->transaction_count = DB::table('transactions as t')
+                ->join('accounts as a', 'a.id', '=', 't.account_id')
+                ->where('a.client_id', $id)
+                ->count('t.id');
+            $profile->account_count = $accounts->count();
+
 
             /*
              * Score AML détaillé
              */
-            $riskScore = DB::table('risk_scores')
-                ->where('client_id', $id)
-                ->first();
+            $riskScore = $isRestrictedAgent
+                ? null
+                : DB::table('risk_scores')
+                    ->where('client_id', $id)
+                    ->first();
+
+            if ($isRestrictedAgent) {
+                unset(
+                    $profile->is_pep,
+                    $profile->risk_level,
+                    $profile->risk_score,
+                    $profile->alert_count
+                );
+            }
 
 
             /*

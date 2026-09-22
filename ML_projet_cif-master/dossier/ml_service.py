@@ -36,7 +36,7 @@ class ScoreRequest(BaseModel):
     client_name: str | None = None
 
 
-app = FastAPI(title="Sentinelle CIF ML Service", version="1.0.0")
+app = FastAPI(title="Sentinelle CIF ML Service", version="1.1.0")
 risk_service, screening_source, screening_path = load_screening_service()
 
 

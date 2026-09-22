@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\AccessProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 
 class AuthController extends Controller
 {
@@ -74,33 +76,7 @@ class AuthController extends Controller
             'data' => [
                 'token' => $token,
 
-                'user' => [
-                    'id' => $user->id,
-                    'username' => $user->username,
-
-                    'agency' => $user->agency ? [
-                        'id' => $user->agency->id,
-                        'code' => $user->agency->code,
-                        'name' => $user->agency->name,
-                        'city' => $user->agency->city,
-                        'caisse' => $user->agency->caisse ? [
-                            'id' => $user->agency->caisse->id,
-                            'code' => $user->agency->caisse->code,
-                            'name' => $user->agency->caisse->name,
-                            'city' => $user->agency->caisse->city,
-                            'country' => $user->agency->caisse->country,
-                            'status' => $user->agency->caisse->status,
-                        ] : null,
-                    ] : null,
-
-                    'role' => $user->role ? [
-                        'id' => $user->role->id,
-                        'name' => $user->role->name,
-                        'description' => $user->role->description,
-                    ] : null,
-
-                    'created_at' => $user->created_at,
-                ],
+                'user' => $this->serializeUser($user),
             ],
         ]);
     }
@@ -123,25 +99,100 @@ class AuthController extends Controller
         return response()->json([
             'success' => true,
 
-            'data' => [
-                'id' => $user->id,
-                'username' => $user->username,
+            'data' => $this->serializeUser($user),
+        ]);
+    }
 
-                'agency' => $user->agency ? [
-                    'id' => $user->agency->id,
-                    'code' => $user->agency->code,
-                    'name' => $user->agency->name,
-                    'city' => $user->agency->city,
+    private function serializeUser(User $user): array
+    {
+        $profile = [
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'full_name' => $user->full_name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'job_title' => $user->job_title,
+            'updated_at' => $user->profile_updated_at,
+        ];
+
+        return [
+            'id' => $user->id,
+            'username' => $user->username,
+            'first_name' => $profile['first_name'],
+            'last_name' => $profile['last_name'],
+            'full_name' => $profile['full_name'],
+            'email' => $profile['email'],
+            'phone' => $profile['phone'],
+            'job_title' => $profile['job_title'],
+            'profile' => $profile,
+            'agency' => $user->agency ? [
+                'id' => $user->agency->id,
+                'code' => $user->agency->code,
+                'name' => $user->agency->name,
+                'city' => $user->agency->city,
+                'caisse' => $user->agency->caisse ? [
+                    'id' => $user->agency->caisse->id,
+                    'code' => $user->agency->caisse->code,
+                    'name' => $user->agency->caisse->name,
+                    'city' => $user->agency->caisse->city,
+                    'country' => $user->agency->caisse->country,
+                    'status' => $user->agency->caisse->status,
                 ] : null,
+            ] : null,
+            'role' => $user->role ? [
+                'id' => $user->role->id,
+                'name' => $user->role->name,
+                'description' => $user->role->description,
+            ] : null,
+            'access' => AccessProfile::forUser($user),
+            'created_at' => $user->created_at,
+        ];
+    }
 
-                'role' => $user->role ? [
-                    'id' => $user->role->id,
-                    'name' => $user->role->name,
-                    'description' => $user->role->description,
-                ] : null,
+    /**
+     * Met à jour l'identité professionnelle du compte connecté.
+     *
+     * PUT /api/v1/auth/profile
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
 
-                'created_at' => $user->created_at,
+        $validated = $request->validate([
+            'first_name' => ['required', 'string', 'min:2', 'max:100'],
+            'last_name' => ['required', 'string', 'min:2', 'max:100'],
+            'email' => [
+                'nullable',
+                'email:rfc',
+                'max:190',
+                Rule::unique('users', 'email')->ignore($user->id),
             ],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'job_title' => ['nullable', 'string', 'max:150'],
+        ]);
+
+        $user->fill([
+            'first_name' => trim($validated['first_name']),
+            'last_name' => trim($validated['last_name']),
+            'email' => ($validated['email'] ?? null)
+                ? mb_strtolower(trim($validated['email']))
+                : null,
+            'phone' => isset($validated['phone']) && trim($validated['phone']) !== ''
+                ? trim($validated['phone'])
+                : null,
+            'job_title' => isset($validated['job_title']) && trim($validated['job_title']) !== ''
+                ? trim($validated['job_title'])
+                : null,
+            'profile_updated_at' => now(),
+        ]);
+        $user->save();
+        $user->load(['agency.caisse', 'role']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profil professionnel mis à jour.',
+            'data' => $this->serializeUser($user),
         ]);
     }
 

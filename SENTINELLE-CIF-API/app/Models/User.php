@@ -34,6 +34,12 @@ class User extends Authenticatable
         'agency_id',
         'role_id',
         'username',
+        'first_name',
+        'last_name',
+        'email',
+        'phone',
+        'job_title',
+        'profile_updated_at',
         'password_hash',
     ];
 
@@ -58,7 +64,18 @@ class User extends Authenticatable
             'agency_id' => 'integer',
             'role_id' => 'integer',
             'created_at' => 'datetime',
+            'profile_updated_at' => 'datetime',
         ];
+    }
+
+    public function getFullNameAttribute(): string
+    {
+        $fullName = trim(implode(' ', array_filter([
+            $this->first_name,
+            $this->last_name,
+        ])));
+
+        return $fullName !== '' ? $fullName : (string) $this->username;
     }
 
     /**

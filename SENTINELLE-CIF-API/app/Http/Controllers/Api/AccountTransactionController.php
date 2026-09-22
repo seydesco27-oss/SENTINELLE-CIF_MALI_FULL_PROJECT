@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,7 @@ class AccountTransactionController extends Controller
              * COMPTE
              * ====================================================
              */
-            $account = DB::table('accounts as a')
+            $accountQuery = DB::table('accounts as a')
                 ->leftJoin(
                     'clients as c',
                     'c.id',
@@ -63,8 +64,9 @@ class AccountTransactionController extends Controller
                     'ca.code as caisse_code',
                     'ca.name as caisse_name',
                 ])
-                ->where('a.id', $id)
-                ->first();
+                ->where('a.id', $id);
+            AgencyAccess::constrain($accountQuery, $request, 'c.agency_id');
+            $account = $accountQuery->first();
 
 
             if (!$account) {
@@ -74,6 +76,10 @@ class AccountTransactionController extends Controller
                     'message' =>
                         'Compte introuvable.',
                 ], 404);
+            }
+
+            if (AgencyAccess::restrictedAgencyId($request) !== null) {
+                unset($account->risk_score, $account->is_pep);
             }
 
 

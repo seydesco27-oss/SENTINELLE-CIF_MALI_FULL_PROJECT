@@ -69,6 +69,11 @@ export const getMe = async () => {
   return response.data; // { success, data: user }
 };
 
+export const updateMyProfile = async (profile) => {
+  const response = await api.put("/auth/profile", profile);
+  return response.data;
+};
+
 // Helpers locaux
 export const getStoredUser = () => {
   try {
@@ -76,6 +81,14 @@ export const getStoredUser = () => {
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
+  }
+};
+
+export const storeUser = (user) => {
+  if (user) {
+    localStorage.setItem("user", JSON.stringify(user));
+  } else {
+    localStorage.removeItem("user");
   }
 };
 
@@ -132,7 +145,12 @@ export const getOpenAlerts = async (params = {}) => {
 export const getAlertDetail = async (id) => {
   const response = await api.get(`/alerts/${id}`);
   return response.data;
-  // { success, data: { alert, actions, investigations, risk_assessments } }
+  // { success, data: { alert, actions, investigations, risk_assessments, ml_analysis } }
+};
+
+export const scoreAlertWithMl = async (id) => {
+  const response = await api.post(`/alerts/${id}/ml-score`);
+  return response.data;
 };
 
 // ---------- TRANSACTIONS ----------
@@ -382,7 +400,7 @@ export const postAssistChat = async ({
     object_id,
     message,
     history,
-  });
+  }, { timeout: 90000 });
   return response.data;
 };
 
