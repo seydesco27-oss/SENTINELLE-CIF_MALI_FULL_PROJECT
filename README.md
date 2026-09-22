@@ -42,27 +42,24 @@ Ouvrir `http://127.0.0.1:5173`.
 
 Compte de démonstration : `admin.test` / `DigiAML@2026`.
 
-## Activer le LLM du chatbot
+## Activer le chatbot Groq
 
-La clé reste uniquement dans `SENTINELLE-CIF-API/.env`.
+La clé reste uniquement dans `SENTINELLE-CIF-API/.env`. Elle ne doit jamais
+être placée dans une variable `VITE_*`, le code React ou GitHub.
 
-Pour Grok :
-
-```env
-LLM_PROVIDER=grok
-LLM_API_KEY=ta_cle_xai
-LLM_BASE_URL=https://api.x.ai/v1
-LLM_MODEL=grok-3-mini
-```
-
-Pour OpenAI :
+Le chatbot utilise l'API Groq compatible OpenAI :
 
 ```env
-LLM_PROVIDER=openai
-LLM_API_KEY=ta_cle_openai
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
+LLM_PROVIDER=groq
+GROQ_API_KEY=ta_cle_groq
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_MODEL=llama-3.3-70b-versatile
+LLM_FALLBACK_MODELS=llama-3.1-8b-instant,openai/gpt-oss-20b
 ```
+
+`openai/gpt-oss-20b` est trop limité (~8 000 tokens/min) pour l’agent avec outils.
+Le modèle principal et les modèles de secours ont des quotas séparés : un 429
+bascule automatiquement, avec retries, sans bloquer l’analyste.
 
 Après toute modification de `.env` :
 

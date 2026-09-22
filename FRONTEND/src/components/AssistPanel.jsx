@@ -116,15 +116,27 @@ export default function AssistPanel({
     if (!objectId || !message) return;
     setLoading(true);
     setError("");
-    setMessages((current) => [...current, { role: "user", content: message }]);
+    // Le message d'accueil est une aide UI, pas un tour réellement produit
+    // par le modèle. L'historique commence toujours par l'utilisateur.
+    const nextHistory = [
+      ...messages.slice(1),
+      { role: "user", content: message },
+    ].slice(-12);
+    setMessages((current) => [
+      ...current,
+      { role: "user", content: message },
+    ]);
     try {
       const res = await postAssistChat({
         object_type: objectType,
         object_id: Number(objectId),
         message,
+        history: nextHistory,
       });
       if (res?.success) {
-        setResult(res.data?.payload || null);
+        // Une discussion affiche uniquement les tours du chat : elle ne doit
+        // pas être suivie d'une synthèse générée par les anciens templates.
+        setResult(null);
         setMessages((current) => [
           ...current,
           {
@@ -150,7 +162,10 @@ export default function AssistPanel({
     const text = question.trim();
     const q = text.toLowerCase();
     if (!q) return;
-    if (q.includes("score") || q.includes("ml")) {
+    // "AML" contient les lettres "ml" : une recherche de sous-chaîne
+    // envoyait donc à tort les questions sur les alertes vers le scoring.
+    const asksForScore = /\b(score|scoring)\b|\bmod[eè]le\s+ml\b|\bmachine learning\b/i.test(q);
+    if (asksForScore) {
       setMessages((current) => [...current, { role: "user", content: text }]);
       runMlScore();
     } else runChat(text);
@@ -251,6 +266,15 @@ export default function AssistPanel({
           </div>
 
           {error && <div className="assist-error">{error}</div>}
+
+          {objectId && (
+            <div className="assist-suggestions" aria-label="Suggestions de recherche">
+              <span>Explorer</span>
+              <button type="button" onClick={() => runChat("Fais la liste des alertes critiques ouvertes.")} disabled={loading}>Alertes critiques</button>
+              <button type="button" onClick={() => runChat("Analyse les risques du dossier en cours.")} disabled={loading}>Analyser ce dossier</button>
+              <button type="button" onClick={() => setQuestion("Le client ")} disabled={loading}>Rechercher un client</button>
+            </div>
+          )}
 
           {objectId && (
             <div className="assist-conversation" aria-live="polite">

@@ -35,4 +35,16 @@ return [
         ],
     ],
 
+    'groq' => [
+        'key' => env('GROQ_API_KEY'),
+        'base_url' => env('LLM_BASE_URL', 'https://api.groq.com/openai/v1'),
+        // llama-3.3-70b : quota TPM plus élevé que gpt-oss-20b (~8k/min).
+        'model' => env('LLM_MODEL', 'llama-3.3-70b-versatile'),
+        'fallback_models' => array_filter(array_map(
+            'trim',
+            explode(',', (string) env('LLM_FALLBACK_MODELS', 'llama-3.1-8b-instant,openai/gpt-oss-20b'))
+        )),
+        'ca_bundle' => env('LLM_CA_BUNDLE', storage_path('certificates/cacert.pem')),
+    ],
+
 ];

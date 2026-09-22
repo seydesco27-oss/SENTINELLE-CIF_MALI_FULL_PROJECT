@@ -222,8 +222,8 @@ export default function Dashboard({ user, onLogout }) {
   }, [filteredAlerts]);
 
   const criticalCount =
-    highRiskSummary?.critical_returned != null
-      ? highRiskSummary.critical_returned
+    highRiskSummary?.critical_total != null
+      ? highRiskSummary.critical_total
       : criticalAlerts.length;
 
   const riskyClients = summary?.clients?.risky ?? "—";

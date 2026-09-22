@@ -371,11 +371,17 @@ export const postAssist = async ({ object_type, object_id, action = "summarize" 
   return response.data;
 };
 
-export const postAssistChat = async ({ object_type, object_id, message }) => {
+export const postAssistChat = async ({
+  object_type,
+  object_id,
+  message,
+  history = [],
+}) => {
   const response = await api.post("/ml/chat", {
     object_type,
     object_id,
     message,
+    history,
   });
   return response.data;
 };
