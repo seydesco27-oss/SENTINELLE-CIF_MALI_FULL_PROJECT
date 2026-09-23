@@ -156,6 +156,24 @@ class RbacMatrixTest extends TestCase
                 'history' => [],
             ])->assertOk()->assertJsonPath('data.provider', 'local');
             $this->assertStringContainsString('Signal ML', $analysis->json('data.message'));
+
+            $agencies = $this->postJson('/api/v1/ml/chat', [
+                'object_type' => 'alert',
+                'object_id' => $alertId,
+                'message' => 'Fais la liste des agences disponibles.',
+                'history' => [],
+            ])->assertOk()->assertJsonPath('data.provider', 'local');
+            $this->assertStringContainsString('Agences disponibles', $agencies->json('data.message'));
+            $this->assertStringNotContainsString('Synthèse du dossier', $agencies->json('data.message'));
+
+            $history = $this->postJson('/api/v1/ml/chat', [
+                'object_type' => 'alert',
+                'object_id' => $alertId,
+                'message' => '22 septembre 1960',
+                'history' => [],
+            ])->assertOk()->assertJsonPath('data.provider', 'local');
+            $this->assertStringContainsString('indépendance du Mali', $history->json('data.message'));
+            $this->assertStringNotContainsString('Synthèse du dossier', $history->json('data.message'));
         }
 
     }
