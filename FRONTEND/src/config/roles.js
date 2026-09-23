@@ -17,7 +17,7 @@ export const PERMISSIONS_BY_ROLE = Object.freeze({
     "centif.manage", "client.view", "client.create", "client.status",
     "account.view", "account.create", "tx.view", "tx.create", "screening.view",
     "ml.use", "report.view", "audit.view", "user.manage", "org.register",
-    "engine.configure", "demo.run",
+    "engine.configure", "demo.run", "list.import", "list.publish", "screening.run_batch",
   ],
   [ROLE_IDS.COMPLIANCE_OFFICER]: [
     "nav.dashboard", "nav.network", "nav.alerts", "nav.investigations",
@@ -67,6 +67,9 @@ export const ROUTE_ACCESS = Object.freeze({
   "/audit": "nav.audit",
   "/parametres": "nav.settings",
   "/admin/utilisateurs": "nav.users",
+  "/admin/users": "user.manage",
+  "/admin/structures": "org.register",
+  "/admin/screening-lists": "list.import",
 });
 
 const NAV_CODES = Object.freeze(Object.values(ROUTE_ACCESS));
@@ -101,7 +104,12 @@ export function getPermissions(user) {
   const source = Array.isArray(user?.access?.permissions)
     ? user.access.permissions
     : PERMISSIONS_BY_ROLE[getRoleId(user)] || ["nav.settings"];
-  return [...new Set(source.flatMap((permission) => LEGACY_PERMISSION_ALIASES[permission] || [permission]))];
+  const codes = source.flatMap((permission) => LEGACY_PERMISSION_ALIASES[permission] || [permission]);
+  const adminOnly = ['org.register', 'user.manage', 'nav.users', 'nav.onboarding_org', 'list.import', 'list.publish', 'screening.run_batch'];
+  const businessWrites = ['alert.decide', 'alert.escalate', 'alert.signal', 'investigation.manage', 'centif.manage', 'client.create', 'client.status', 'account.create', 'tx.create'];
+  return [...new Set(codes.filter(code => getRoleId(user) === ROLE_IDS.ADMIN
+    ? (!code.startsWith('nav.') || ['nav.users', 'nav.onboarding_org', 'nav.audit', 'nav.settings', 'nav.engines'].includes(code)) && !businessWrites.includes(code)
+    : !adminOnly.includes(code)))];
 }
 
 export function can(user, permissionCode) {
@@ -111,26 +119,25 @@ export function can(user, permissionCode) {
 export const canAccess = can;
 
 export function dataScope(user) {
-  if (user?.access?.scope?.type) return user.access.scope;
   const roleId = getRoleId(user);
-  const type = roleId === ROLE_IDS.ADMIN
-    ? "PLATFORM"
-    : roleId === ROLE_IDS.COMPLIANCE_OFFICER
-      ? "CAISSE"
-      : roleId === ROLE_IDS.ACCOUNT_MANAGER ? "PORTFOLIO" : "AGENCY";
+  const explicit = user?.access?.scope?.type || user?.scope_level;
+  const allowed = roleId === ROLE_IDS.ADMIN ? ['PLATFORM'] : roleId === ROLE_IDS.COMPLIANCE_OFFICER ? ['CAISSE', 'AGENCY'] : roleId === ROLE_IDS.SUPERVISOR ? ['AGENCY', 'CAISSE'] : roleId === ROLE_IDS.ACCOUNT_MANAGER ? ['PORTFOLIO'] : ['AGENCY'];
+  const type = allowed.includes(explicit) ? explicit : allowed[0];
   return {
     type,
-    agency_id: user?.agency?.id ?? user?.agency_id ?? null,
-    caisse_id: user?.caisse?.id ?? user?.agency?.caisse?.id ?? user?.caisse_id ?? null,
+    agency_id: user?.access?.scope?.agency_id ?? user?.agency?.id ?? user?.agency_id ?? null,
+    caisse_id: user?.access?.scope?.caisse_id ?? user?.caisse?.id ?? user?.agency?.caisse?.id ?? user?.caisse_id ?? null,
     user_id: user?.id ?? null,
   };
 }
 
 export function getDefaultRoute(user) {
+  if (getRoleId(user) === ROLE_IDS.ADMIN) return "/admin/structures";
   return user?.access?.default_path || (can(user, "nav.dashboard") ? "/dashboard" : "/parametres");
 }
 
 export function getWorkspaceLabel(user) {
+  if (getRoleId(user) === ROLE_IDS.SUPERVISOR && dataScope(user).type === "CAISSE") return "Administration de caisse";
   if (user?.access?.workspace_label) return user.access.workspace_label;
   return {
     [ROLE_IDS.ADMIN]: "Administration et gouvernance de la plateforme",
@@ -139,6 +146,11 @@ export function getWorkspaceLabel(user) {
     [ROLE_IDS.AGENT]: "Opérations de l’agence",
     [ROLE_IDS.ACCOUNT_MANAGER]: "Portefeuille clients",
   }[getRoleId(user)] || "Espace utilisateur";
+}
+
+export function getRoleBadge(user) {
+  if (getRoleId(user) === ROLE_IDS.SUPERVISOR && dataScope(user).type === "CAISSE") return "Admin caisse";
+  return ({ 1: "ADMIN SaaS", 2: "Conformité", 3: "Superviseur", 4: "Agent" })[getRoleId(user)] || "Utilisateur";
 }
 
 export function getUserDisplayName(user) {

@@ -318,3 +318,9 @@
   color: #fca5a5;
   border-color: rgba(220, 38, 38, 0.25);
 }
+
+@media (max-width: 700px) {
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; align-self: auto; box-shadow: 4px 0 20px rgba(15, 23, 42, .12); }
+  .app-main { flex: 1 1 auto; width: calc(100% - 68px); margin-left: 68px; }
+  .sidebar:not(.is-collapsed) { box-shadow: 8px 0 30px rgba(15, 23, 42, .25); }
+}

@@ -41,6 +41,9 @@ Route::get('/health', [
     'check'
 ]);
 
+// Même contrat disponible sous /api/admin et /api/v1/admin.
+Route::prefix('admin')->middleware(['auth:sanctum', 'role:1'])->group(base_path('routes/admin.php'));
+
 Route::get('/dashboard', [
     AmlDashboardController::class,
     'summary'
@@ -79,12 +82,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         'updateProfile'
     ]);
 
-    Route::get('/admin/users', [AdminUserController::class, 'index'])
-        ->middleware('permission:user.manage');
-    Route::post('/admin/users', [AdminUserController::class, 'store'])
-        ->middleware('permission:user.manage');
-    Route::patch('/admin/users/{id}', [AdminUserController::class, 'update'])
-        ->middleware('permission:user.manage');
+    Route::prefix('admin')->middleware('role:1')->group(base_path('routes/admin.php'));
 
     /*
     |--------------------------------------------------------------------------
@@ -283,7 +281,7 @@ Route::get('/accounts/{id}/mandates', [
     Route::post('/transactions/{id}/evaluate', [
         TransactionAmlController::class,
         'evaluate'
-    ])->middleware('permission:ml.use');
+    ])->middleware(['permission:ml.use', 'role:2']);
 
         Route::post('/transactions', [
         TransactionController::class,
@@ -348,7 +346,7 @@ Route::get('/accounts/{id}/mandates', [
     Route::post('/alerts/{id}/ml-score', [
         AlertController::class,
         'scoreWithMl'
-    ])->middleware('permission:ml.use');
+    ])->middleware(['permission:ml.use', 'role:2']);
 
     Route::patch('/alerts/{id}/decision', [
         AlertController::class,
@@ -537,11 +535,11 @@ Route::get('/network', [
 Route::get('/ml/assist/alert/{id}', [MlAssistController::class, 'alertContext'])->middleware('permission:ml.use');
 Route::get('/ml/assist/client/{id}', [MlAssistController::class, 'clientContext'])->middleware('permission:ml.use');
 Route::post('/ml/assist', [MlAssistController::class, 'assist'])->middleware('permission:ml.use');
-Route::post('/ml/chat', [MlAssistController::class, 'chat'])->middleware('permission:ml.use');
+Route::post('/ml/chat', [MlAssistController::class, 'chat'])->middleware('role:1,2,3,4');
 
 // --- Score ML (microservice Python) ---
 Route::get('/ml/health', [MlScoreController::class, 'health'])->middleware('permission:ml.use');
-Route::post('/ml/score', [MlScoreController::class, 'score'])->middleware('permission:ml.use');
+Route::post('/ml/score', [MlScoreController::class, 'score'])->middleware(['permission:ml.use', 'role:2']);
 
 
 Route::get('/clients/{id}/compliance/dual-risk', [

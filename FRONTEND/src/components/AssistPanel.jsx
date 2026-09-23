@@ -6,7 +6,7 @@ import "./AssistPanel.css";
 const ASSISTANT_PROFILES = {
   [ROLE_IDS.ADMIN]: {
     eyebrow: "ASSISTANT D’ADMINISTRATION",
-    greeting: "Je peux vérifier l’état des moteurs, les périmètres, les utilisateurs et les parcours de démonstration.",
+    greeting: "Je vous accompagne pour inscrire une caisse, choisir API, CSV ou SQL, remettre ses accès techniques et mettre à jour les listes de sanctions avant un screening ciblé.",
   },
   [ROLE_IDS.COMPLIANCE_OFFICER]: {
     eyebrow: "ASSISTANT DE CONFORMITÉ",
@@ -333,7 +333,12 @@ export default function AssistPanel({
         </header>
 
         <div className="assist-drawer-body">
-          <div className="assist-quick">
+          {roleId === ROLE_IDS.ADMIN ? <div className="assist-quick">
+            <button className="assist-btn primary" disabled={loading} onClick={() => runChat('Comment choisir le mode d’intégration API, CSV ou SQL ?')}>Intégration</button>
+            <button className="assist-btn" disabled={loading} onClick={() => runChat('Comment remettre les accès techniques à une caisse ?')}>Accès techniques</button>
+            <button className="assist-btn" disabled={loading} onClick={() => runChat('Comment importer les listes de sanctions puis lancer un screening ?')}>Listes & Screening</button>
+            <button className="assist-btn" disabled={loading} onClick={() => runChat('Quels utilisateurs initiaux créer pour une caisse ?')}>Utilisateurs</button>
+          </div> : <div className="assist-quick">
             <button
               type="button"
               className="assist-btn primary"
@@ -376,13 +381,13 @@ export default function AssistPanel({
             >
               {mlLoading ? "Score…" : "Score ML"}
             </button>
-          </div>
+          </div>}
 
           <div className="assist-scroll-region">
 
           {error && <div className="assist-error">{error}</div>}
 
-          {objectId && (
+          {objectId && roleId !== ROLE_IDS.ADMIN && (
             <div className="assist-suggestions" aria-label="Suggestions de recherche">
               <span>Explorer</span>
               <button type="button" onClick={() => runChat("Fais la liste des alertes critiques ouvertes.")} disabled={loading}>Alertes critiques</button>
@@ -514,7 +519,7 @@ export default function AssistPanel({
           )}
 
           
-          {!objectId && (
+          {!objectId && roleId !== ROLE_IDS.ADMIN && (
             <div className="assist-body">
               <section>
                 <h4>Comment utiliser Assist</h4>
@@ -540,7 +545,7 @@ export default function AssistPanel({
         <form className="assist-chatbar" onSubmit={onAsk}>
           <input
             type="text"
-            placeholder="Ex. résumer cette alerte…"
+            placeholder={roleId === ROLE_IDS.ADMIN ? 'Ex. Quel mode d’intégration choisir ?' : objectId ? 'Ex. résumer cette alerte…' : 'Posez une question…'}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             disabled={loading}

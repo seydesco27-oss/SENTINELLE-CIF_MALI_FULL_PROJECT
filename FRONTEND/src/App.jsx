@@ -19,6 +19,8 @@ import Rapports from "./pages/Rapports";
 import Parametres from "./pages/Parametres";
 import CentifDeclarations from "./pages/CentifDeclarations";
 import AdminUsers from "./pages/AdminUsers";
+import { AdminStructures, StructureWizard, StructureAccess } from "./pages/AdminStructures";
+import AdminScreeningLists from "./pages/AdminScreeningLists";
 import {
   isAuthenticated,
   getStoredUser,
@@ -26,7 +28,8 @@ import {
   storeUser,
   logout as apiLogout,
 } from "./services/api";
-import { canAccess, getDefaultRoute } from "./auth/access";
+import { canAccess, getDefaultRoute, getRoleId } from "./auth/access";
+import "./role-theme.css";
 
 function ProtectedPage({ user, permission, children }) {
   if (!isAuthenticated()) {
@@ -42,6 +45,12 @@ function ProtectedPage({ user, permission, children }) {
 
 function App() {
   const [user, setUser] = useState(getStoredUser());
+
+  useEffect(() => {
+    document.documentElement.dataset.roleTheme = ({
+      1: "theme-admin", 2: "theme-co", 3: "theme-supervisor", 4: "theme-agent",
+    })[getRoleId(user)] || "theme-default";
+  }, [user]);
 
   useEffect(() => {
     const syncUser = () => setUser(getStoredUser());
@@ -103,6 +112,11 @@ function App() {
         <Route path="/rapports" element={<ProtectedPage user={user} permission="nav.reports"><Rapports user={user} onLogout={handleLogout} /></ProtectedPage>} />
         <Route path="/parametres" element={<ProtectedPage user={user} permission="nav.settings"><Parametres user={user} onLogout={handleLogout} /></ProtectedPage>} />
         <Route path="/admin/utilisateurs" element={<ProtectedPage user={user} permission="nav.users"><AdminUsers user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/admin/structures" element={<ProtectedPage user={user} permission="org.register"><AdminStructures user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/admin/structures/new" element={<ProtectedPage user={user} permission="org.register"><StructureWizard user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/admin/structures/:id/access" element={<ProtectedPage user={user} permission="org.register"><StructureAccess user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/admin/users" element={<ProtectedPage user={user} permission="user.manage"><AdminUsers user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/admin/screening-lists" element={<ProtectedPage user={user} permission="list.import"><AdminScreeningLists user={user} onLogout={handleLogout} /></ProtectedPage>} />
 
         {/* M5 : authentifié → dashboard ; sinon → login */}
         <Route

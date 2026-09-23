@@ -1,16 +1,37 @@
-# React + Vite
+# Interface SENTINELLE-CIF
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Application React/Vite de la plateforme de supervision financière.
 
-Currently, two official plugins are available:
+## Démarrer
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Depuis la racine du projet, lancer `powershell -ExecutionPolicy Bypass -File .\start-sentinelle.ps1` pour démarrer les trois services. Pour lancer seulement l’interface :
 
-## React Compiler
+```powershell
+cd FRONTEND
+npm install
+npm run dev -- --host 127.0.0.1 --port 5173
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+L’interface utilise l’API locale `http://127.0.0.1:8000/api/v1`. Les contrôles d’accès affichés par React améliorent la navigation ; l’API applique elle-même les droits et les périmètres.
 
-## Expanding the ESLint configuration
+## Espace ADMIN SaaS
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Après connexion, le rôle ADMIN ouvre directement `/admin/structures`.
+
+- **Structures** (`/admin/structures`) : liste des caisses avec leur mode API, CSV ou SQL, périmètre et actions. Le wizard `/admin/structures/new` suit cinq étapes et crée la caisse, sa première agence et trois comptes initiaux. `/admin/structures/:id/access` remet le contrat adapté au mode choisi.
+- **Listes & Screening** (`/admin/screening-lists`) : liens officiels ONU, UE, OFAC ; import du fichier téléchargé ; historique SUCCESS/FAILED ; screening par lots sur une caisse ou une agence. Après un import, l’interface recommande de lancer le screening.
+- **Utilisateurs** (`/admin/users`) : création et édition du rôle, du périmètre, de la caisse et de l’agence. Un SUPERVISOR au périmètre CAISSE est l’admin de caisse ; un AGENT reste au périmètre AGENCY.
+
+La navigation ADMIN présente ces trois rubriques, le journal d’audit et Mon compte. L’assistant ADMIN guide le déploiement, les accès, les listes et les comptes. L’aide à l’analyse de dossier appartient à la session Conformité habilitée.
+
+Le thème de chaque rôle est défini dans `src/role-theme.css` : indigo ADMIN, bleu Conformité, ambre Superviseur, teal Agent. `src/config/roles.js` centralise les badges, les permissions d’affichage et le périmètre affiché. Les listes métier transmettent aussi le filtre caisse ou agence ; seul le filtre de l’API fait autorité.
+
+## Vérifier
+
+```powershell
+cd FRONTEND
+npm run lint
+npm run build
+```
+
+Le flux complet et les limites du connecteur sont documentés dans le [README racine](../README.md) et le [README API](../SENTINELLE-CIF-API/README.md).

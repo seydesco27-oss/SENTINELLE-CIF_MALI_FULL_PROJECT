@@ -81,7 +81,7 @@ if (-not (Test-Endpoint -Uri 'http://127.0.0.1:8100/health')) {
 
 $phpCommand = Get-Command php -ErrorAction Stop
 if (-not (Test-Endpoint -Uri 'http://127.0.0.1:8000/api/health')) {
-    Start-ManagedProcess -Name 'api' -FilePath $phpCommand.Source -ArgumentList @('artisan', 'serve', '--host=127.0.0.1', '--port=8000') -WorkingDirectory $ApiDirectory
+    Start-ManagedProcess -Name 'api' -FilePath $phpCommand.Source -ArgumentList @('-d', 'upload_max_filesize=50M', '-d', 'post_max_size=52M', '-d', 'memory_limit=512M', '-d', 'max_execution_time=120', '-S', '127.0.0.1:8000', '..\vendor\laravel\framework\src\Illuminate\Foundation\resources\server.php') -WorkingDirectory (Join-Path $ApiDirectory 'public')
 }
 
 $npmCommand = Get-Command npm.cmd -ErrorAction Stop

@@ -8,6 +8,7 @@ import {
   getWorkspaceLabel,
 } from "../auth/access";
 import "./Sidebar.css";
+import { getRoleBadge, getRoleId } from "../config/roles";
 
 /** Logo bouclier SENTINELLE — contrat Figma (protection + data) */
 function SentinelleLogo({ size = 28 }) {
@@ -181,12 +182,23 @@ const NAV_SECTIONS = [
 ];
 
 const STORAGE_KEY = "sentinelle_sidebar_collapsed";
+const ADMIN_NAV = [
+  { label: 'PLATEFORME SAAS', items: [
+    { to: '/admin/structures', label: 'Structures', icon: 'network', permission: 'org.register' },
+    { to: '/admin/screening-lists', label: 'Listes & Screening', icon: 'screening', permission: 'list.import' },
+    { to: '/admin/users', label: 'Utilisateurs', icon: 'clients', permission: 'user.manage' },
+  ] },
+  { label: 'SYSTÈME', items: [
+    { to: '/audit', label: 'Journal d’audit', icon: 'audit', permission: 'nav.audit' },
+    { to: '/parametres', label: 'Mon compte', icon: 'settings', permission: 'nav.settings' },
+  ] },
+];
 
 export default function Sidebar({ user, onLogout }) {
   const [openAlertsCount, setOpenAlertsCount] = useState(null);
   const [collapsed, setCollapsed] = useState(() => {
     try {
-      return localStorage.getItem(STORAGE_KEY) === "1";
+      return window.matchMedia('(max-width: 700px)').matches || localStorage.getItem(STORAGE_KEY) === "1";
     } catch {
       return false;
     }
@@ -218,7 +230,7 @@ export default function Sidebar({ user, onLogout }) {
     };
   }, [user]);
 
-  const visibleSections = NAV_SECTIONS.map((section) => ({
+  const visibleSections = (getRoleId(user) === 1 ? ADMIN_NAV : NAV_SECTIONS).map((section) => ({
     ...section,
     items: section.items.filter((item) => canAccess(user, item.permission)),
   })).filter((section) => section.items.length > 0);
@@ -261,6 +273,7 @@ export default function Sidebar({ user, onLogout }) {
             <div className="sidebar-brand-tagline">
               Supervision financière
             </div>
+            <span className="role-identity-badge">{getRoleBadge(user)}</span>
           </div>
         </div>
       </div>

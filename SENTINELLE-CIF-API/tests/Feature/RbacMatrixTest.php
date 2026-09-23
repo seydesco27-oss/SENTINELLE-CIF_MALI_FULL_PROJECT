@@ -121,8 +121,8 @@ class RbacMatrixTest extends TestCase
         ]);
         Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('Provider unreachable'));
 
-        $admin = User::query()->where('username', 'admin.test')->firstOrFail();
-        Sanctum::actingAs($admin);
+        $officer = User::query()->where('username', 'analyste.demo')->firstOrFail();
+        Sanctum::actingAs($officer);
 
         $response = $this->postJson('/api/v1/ml/chat', [
             'object_type' => 'general',
@@ -188,6 +188,8 @@ class RbacMatrixTest extends TestCase
             [$agent->agency_id],
             collect($agentClients)->pluck('client_agency_id')->map(fn ($id) => (int) $id)->unique()->values()->all()
         );
+        $forgedClients = $this->getJson('/api/v1/clients?per_page=100&agency_id=0&caisse_id=0&scope_level=PLATFORM')->assertOk()->json('data');
+        $this->assertSame([$agent->agency_id], collect($forgedClients)->pluck('client_agency_id')->map(fn ($id) => (int) $id)->unique()->values()->all());
         $outsideClientId = \DB::table('clients')->where('agency_id', '!=', $agent->agency_id)->value('id');
         if ($outsideClientId !== null) {
             $this->getJson('/api/v1/clients/'.(int) $outsideClientId)->assertNotFound();

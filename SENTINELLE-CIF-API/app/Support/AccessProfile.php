@@ -28,6 +28,7 @@ final class AccessProfile
         'account.view', 'account.create', 'tx.view', 'tx.create',
         'screening.view', 'ml.use', 'report.view', 'audit.view',
         'user.manage', 'org.register', 'engine.configure', 'demo.run',
+        'list.import', 'list.publish', 'screening.run_batch',
     ];
 
     private const PERMISSIONS_BY_ROLE = [
@@ -95,6 +96,11 @@ final class AccessProfile
             $rolePermissions,
             fn (string $permission): bool => ! str_starts_with($permission, 'data.scope_')
         ));
+        $adminOnly = ['org.register', 'user.manage', 'nav.users', 'nav.onboarding_org', 'list.import', 'list.publish', 'screening.run_batch'];
+        $businessWrites = ['alert.decide', 'alert.escalate', 'alert.signal', 'investigation.manage', 'centif.manage', 'client.create', 'client.status', 'account.create', 'tx.create'];
+        $permissions = array_values(array_filter($permissions, fn ($code) => (int) $user->role_id === self::ADMIN
+            ? (!str_starts_with($code, 'nav.') || in_array($code, ['nav.users', 'nav.onboarding_org', 'nav.audit', 'nav.settings', 'nav.engines'], true)) && !in_array($code, $businessWrites, true)
+            : !in_array($code, $adminOnly, true)));
         $permissions[] = 'data.scope_'.strtolower(AgencyAccess::scopeFor($user)['type']);
 
         return array_values(array_unique($permissions));
@@ -107,6 +113,7 @@ final class AccessProfile
 
     public static function defaultPath(?int $roleId): string
     {
+        if ($roleId === self::ADMIN) return '/admin/structures';
         return in_array('nav.dashboard', self::permissions($roleId), true)
             ? '/dashboard'
             : '/parametres';
@@ -129,7 +136,7 @@ final class AccessProfile
         $roleId = $user->role_id !== null ? (int) $user->role_id : null;
 
         return [
-            'workspace_label' => self::workspaceLabel($roleId),
+            'workspace_label' => $roleId === self::SUPERVISOR && AgencyAccess::scopeFor($user)['type'] === AgencyAccess::CAISSE ? 'Administration de caisse' : self::workspaceLabel($roleId),
             'default_path' => self::defaultPath($roleId),
             'permissions' => self::permissionsForUser($user),
             'scope' => AgencyAccess::scopeFor($user),

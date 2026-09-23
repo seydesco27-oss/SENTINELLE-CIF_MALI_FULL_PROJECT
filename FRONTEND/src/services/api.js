@@ -1,9 +1,22 @@
 import axios from "axios";
+import { dataScope } from '../config/roles';
 
 // ──────────────────────────────────────────────
 // CONFIGURATION
 // ──────────────────────────────────────────────
 export const USE_MOCKS = false; // ← on passe en réel dès maintenant
+
+export const getAdminStructures = async () => (await api.get('/admin/caisses')).data;
+export const createAdminStructure = async (body) => (await api.post('/admin/caisses', body)).data;
+export const getStructureAccess = async (id) => (await api.get(`/admin/caisses/${id}/access`)).data;
+export const provisionStructureApiKey = async (id) => (await api.post(`/admin/caisses/${id}/access-key`)).data;
+export const getScreeningLists = async () => (await api.get('/admin/screening-lists')).data;
+export const getScreeningBatches = async (id) => (await api.get(`/admin/screening-lists/${id}/batches`)).data;
+export const importScreeningList = async (id, file) => {
+  const body = new FormData(); body.append('file', file);
+  return (await api.post(`/admin/screening-lists/${id}/import`, body, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+};
+export const runScreeningBatch = async (body) => (await api.post('/admin/screening/run-batch', body)).data;
 
 const api = axios.create({
   baseURL: "http://127.0.0.1:8000/api/v1",
@@ -18,6 +31,11 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  if ((config.method || 'get').toLowerCase() === 'get' && /^\/(clients|accounts|transactions|alerts|dashboard|network|investigations|screening|reports|centif)(\/|$)/.test(config.url || '')) {
+    const scope = dataScope(getStoredUser());
+    if (scope.type === 'CAISSE') config.params = { ...config.params, caisse_id: scope.caisse_id ?? 0 };
+    if (scope.type === 'AGENCY' || scope.type === 'PORTFOLIO') config.params = { ...config.params, agency_id: scope.agency_id ?? 0 };
   }
   return config;
 });

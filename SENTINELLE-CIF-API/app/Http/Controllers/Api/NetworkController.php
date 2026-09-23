@@ -129,6 +129,15 @@ class NetworkController extends Controller
 
             AgencyAccess::constrain($agencyQuery, $request, 'ag.id');
             $agencies = $agencyQuery->get();
+            // Les compteurs d'une caisse ne doivent pas révéler les agences hors périmètre.
+            if ($scope['type'] !== AgencyAccess::PLATFORM) {
+                $caisses = $caisses->filter(fn ($caisse) => $agencies->contains('caisse_id', $caisse->id))->values();
+                foreach ($caisses as $caisse) {
+                    $visible = $agencies->where('caisse_id', $caisse->id);
+                    $caisse->agency_count = $visible->count();
+                    $caisse->client_count = (int) $visible->sum('client_count');
+                }
+            }
 
 
             /*

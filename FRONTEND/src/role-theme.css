@@ -1,0 +1,16 @@
+:root { --role-accent: #2563eb; --role-ink: #1d4ed8; --role-soft: #eff6ff; --role-border: #bfdbfe; }
+:root[data-role-theme="theme-admin"] { --role-accent: #4f46e5; --role-ink: #4338ca; --role-soft: #eef2ff; --role-border: #c7d2fe; }
+:root[data-role-theme="theme-co"] { --role-accent: #2563eb; --role-ink: #1d4ed8; --role-soft: #eff6ff; --role-border: #bfdbfe; }
+:root[data-role-theme="theme-supervisor"] { --role-accent: #d97706; --role-ink: #92400e; --role-soft: #fffbeb; --role-border: #fcd34d; }
+:root[data-role-theme="theme-agent"] { --role-accent: #0d9488; --role-ink: #0f766e; --role-soft: #f0fdfa; --role-border: #99f6e4; }
+html[data-role-theme] .sidebar { border-top: 4px solid var(--role-accent); }
+html[data-role-theme] .sidebar-link-active { background: color-mix(in srgb, var(--role-accent) 32%, #1a2744); border-left: 3px solid var(--role-accent); }
+html[data-role-theme] .sidebar-user-avatar { background: var(--role-accent); border-color: var(--role-border); color: white; }
+.role-identity-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 9px; padding: 4px 8px; border-radius: 999px; background: var(--role-soft); color: var(--role-ink); font-size: 10px; font-weight: 750; white-space: nowrap; }
+.role-identity-badge::before { content: ""; width: 6px; height: 6px; background: var(--role-accent); border-radius: 50%; }
+html[data-role-theme] .assist-fab, html[data-role-theme] .assist-btn.primary, html[data-role-theme] .assist-send { background: var(--role-accent); border-color: var(--role-accent); }
+html[data-role-theme] .dashboard { --accent: var(--role-accent); }
+html[data-role-theme] .admin-users-heading button, html[data-role-theme] .admin-user-form-actions .primary { background: var(--role-accent); border-color: var(--role-accent); }
+html[data-role-theme] .admin-users-heading p, html[data-role-theme] .admin-user-toggle { color: var(--role-ink); }
+html[data-role-theme] .scope-chip { background: var(--role-soft); color: var(--role-ink); }
+html[data-role-theme] input:focus-visible, html[data-role-theme] select:focus-visible, html[data-role-theme] textarea:focus-visible, html[data-role-theme] button:focus-visible, html[data-role-theme] a:focus-visible { outline: 2px solid var(--role-accent); outline-offset: 3px; }

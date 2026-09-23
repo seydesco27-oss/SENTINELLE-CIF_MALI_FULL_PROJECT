@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 final class AdminUserController extends Controller
 {
@@ -38,11 +39,15 @@ final class AdminUserController extends Controller
             });
         }
 
+        foreach (['caisse_id', 'agency_id'] as $filter) {
+            if ($request->filled($filter)) $query->where('u.'.$filter, (int) $request->query($filter));
+        }
         return response()->json([
             'success' => true,
             'data' => $query->get(),
             'options' => [
-                'roles' => DB::table('roles')->orderBy('id')->get(['id', 'name', 'description']),
+                'roles' => DB::table('roles')->whereIn('id', [1, 2, 3, 4])->orderBy('id')->get(['id', 'name', 'description']),
+                'caisses' => DB::table('caisses')->orderBy('name')->get(['id', 'code', 'name']),
                 'agencies' => DB::table('agencies as a')->join('caisses as c', 'c.id', '=', 'a.caisse_id')
                     ->orderBy('c.name')->orderBy('a.name')
                     ->get(['a.id', 'a.code', 'a.name', 'a.caisse_id', 'c.name as caisse_name']),
@@ -90,9 +95,10 @@ final class AdminUserController extends Controller
             'last_name' => ['required', 'string', 'min:2', 'max:100'],
             'email' => ['nullable', 'email:rfc', 'max:190', Rule::unique('users', 'email')->ignore($user?->id)],
             'job_title' => ['nullable', 'string', 'max:150'],
-            'role_id' => ['required', 'integer', Rule::exists('roles', 'id')],
+            'role_id' => ['required', 'integer', Rule::in([1, 2, 3, 4]), Rule::exists('roles', 'id')],
+            'caisse_id' => ['nullable', 'integer', Rule::exists('caisses', 'id')],
             'agency_id' => ['nullable', 'integer', Rule::exists('agencies', 'id')],
-            'scope_level' => ['required', Rule::in(['PLATFORM', 'CAISSE', 'AGENCY', 'PORTFOLIO'])],
+            'scope_level' => ['required', Rule::in(['PLATFORM', 'CAISSE', 'AGENCY'])],
             'is_active' => ['sometimes', 'boolean'],
         ]);
     }
@@ -101,21 +107,23 @@ final class AdminUserController extends Controller
     {
         $roleId = (int) $values['role_id'];
         if ($roleId === AccessProfile::ADMIN) {
+            if ($values['scope_level'] !== 'PLATFORM') throw ValidationException::withMessages(['scope_level' => 'ADMIN est réservé à la plateforme SaaS.']);
             return ['agency_id' => null, 'caisse_id' => null, 'scope_level' => 'PLATFORM'];
         }
 
         $agencyId = (int) ($values['agency_id'] ?? 0);
-        abort_if($agencyId <= 0, 422, 'Une agence est obligatoire pour ce rôle.');
-        $caisseId = DB::table('agencies')->where('id', $agencyId)->value('caisse_id');
-        abort_if(! $caisseId, 422, 'Agence invalide.');
+        $agencyCaisse = $agencyId ? DB::table('agencies')->where('id', $agencyId)->value('caisse_id') : null;
+        $caisseId = (int) ($values['caisse_id'] ?? $agencyCaisse ?? 0);
+        if (!$caisseId) throw ValidationException::withMessages(['caisse_id' => 'Choisissez une caisse.']);
+        if ($agencyId && (int) $agencyCaisse !== $caisseId) throw ValidationException::withMessages(['agency_id' => 'Cette agence ne dépend pas de la caisse choisie.']);
         $allowedScopes = match ($roleId) {
             AccessProfile::COMPLIANCE_OFFICER, AccessProfile::SUPERVISOR => ['CAISSE', 'AGENCY'],
-            AccessProfile::ACCOUNT_MANAGER => ['PORTFOLIO'],
             default => ['AGENCY'],
         };
         abort_unless(in_array($values['scope_level'], $allowedScopes, true), 422, 'Périmètre incompatible avec ce rôle.');
+        if ($values['scope_level'] === 'AGENCY' && !$agencyId) throw ValidationException::withMessages(['agency_id' => 'Choisissez une agence pour le périmètre agence.']);
 
-        return ['agency_id' => $agencyId, 'caisse_id' => (int) $caisseId, 'scope_level' => $values['scope_level']];
+        return ['agency_id' => $agencyId ?: null, 'caisse_id' => $caisseId, 'scope_level' => $values['scope_level']];
     }
 
     private function values(array $values, array $assignment, ?User $user = null): array

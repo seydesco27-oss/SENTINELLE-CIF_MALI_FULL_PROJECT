@@ -11,6 +11,8 @@ class Caisse extends Model
 
     public $timestamps = false;
 
+    protected $hidden = ['api_key'];
+
     protected $fillable = [
         'code',
         'name',
