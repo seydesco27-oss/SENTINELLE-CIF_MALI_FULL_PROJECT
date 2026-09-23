@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -46,6 +47,8 @@ class CentifDeclarationController extends Controller
                     'd.centif_opposition_until',
                     'd.created_at',
                 ]);
+
+            AgencyAccess::constrain($query, $request, 'c.agency_id');
 
             if ($request->filled('transmission_status')) {
                 $query->where('d.transmission_status', strtoupper($request->query('transmission_status')));
@@ -97,7 +100,13 @@ class CentifDeclarationController extends Controller
     {
         try {
             $alertId = (int) $request->input('alert_id');
-            $alert = DB::table('alerts')->where('id', $alertId)->first();
+            $alertQuery = DB::table('alerts as a')
+                ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
+                ->leftJoin('transactions as t', 't.id', '=', 'a.transaction_id')
+                ->select(['a.*'])
+                ->where('a.id', $alertId);
+            AgencyAccess::constrain($alertQuery, $request, DB::raw('COALESCE(t.agency_id, c.agency_id)'));
+            $alert = $alertQuery->first();
 
             if (!$alert) {
                 return response()->json([
@@ -179,10 +188,10 @@ class CentifDeclarationController extends Controller
      *
      * GET /api/v1/centif/declarations/{id}
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
-            $declaration = DB::table('centif_declarations as d')
+            $query = DB::table('centif_declarations as d')
                 ->leftJoin('clients as c', 'c.id', '=', 'd.client_id')
                 ->leftJoin('users as u', 'u.id', '=', 'd.declared_by')
                 ->leftJoin('alerts as a', 'a.id', '=', 'd.alert_id')
@@ -193,8 +202,10 @@ class CentifDeclarationController extends Controller
                     'a.reference as alert_reference',
                     'a.title as alert_title',
                 ])
-                ->where('d.id', $id)
-                ->first();
+                ->where('d.id', $id);
+
+            AgencyAccess::constrain($query, $request, 'c.agency_id');
+            $declaration = $query->first();
 
             if (!$declaration) {
                 return response()->json([
@@ -234,7 +245,12 @@ class CentifDeclarationController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         try {
-            $declaration = DB::table('centif_declarations')->where('id', $id)->first();
+            $query = DB::table('centif_declarations as d')
+                ->leftJoin('clients as c', 'c.id', '=', 'd.client_id')
+                ->select(['d.*'])
+                ->where('d.id', $id);
+            AgencyAccess::constrain($query, $request, 'c.agency_id');
+            $declaration = $query->first();
 
             if (!$declaration) {
                 return response()->json([

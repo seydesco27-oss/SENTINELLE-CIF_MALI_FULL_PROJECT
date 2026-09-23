@@ -143,9 +143,9 @@ export default function ClientDetail({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [payload, setPayload] = useState(null);
-  const canViewRisk = canAccess(user, "risk_analysis");
-  const canViewAlerts = canAccess(user, "alerts");
-  const canUseAssist = canAccess(user, "assist");
+  const canViewRisk = canAccess(user, "client.view");
+  const canViewAlerts = canAccess(user, "alert.view");
+  const canUseAssist = canAccess(user, "ml.use");
   const tabs = [
     "Dossier",
     "Comptes",

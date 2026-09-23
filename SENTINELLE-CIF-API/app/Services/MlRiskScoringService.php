@@ -241,16 +241,10 @@ final class MlRiskScoringService
                 DB::table('risk_scores')->insert($riskValues);
             }
 
-            if ($result['alert_id']) {
-                $alert = DB::table('alerts')->where('id', $result['alert_id'])->first();
-                if ($alert) {
-                    $score = max((float) ($alert->final_score ?? 0), $result['operational_score']);
-                    DB::table('alerts')->where('id', $result['alert_id'])->update([
-                        'final_score' => round($score, 2),
-                        'priority' => $this->labelFromPercentage($score),
-                    ]);
-                }
-            }
+            // Le résultat ML reste dans predictions/risk_scores. Le score AML
+            // de l'alerte est déterministe et ne doit jamais être écrasé par
+            // une fusion statistique affichée comme s'il s'agissait du même
+            // signal.
         });
     }
 

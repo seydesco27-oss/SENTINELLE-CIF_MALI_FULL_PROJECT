@@ -18,9 +18,7 @@ class ClientActivityController extends Controller
     {
         try {
 
-            $clientQuery = DB::table('clients')->where('id', $id);
-            AgencyAccess::constrain($clientQuery, $request, 'agency_id');
-            $clientExists = $clientQuery->exists();
+            $clientExists = AgencyAccess::canAccessClient($request, $id);
 
             if (!$clientExists) {
                 return response()->json([
@@ -148,9 +146,13 @@ class ClientActivityController extends Controller
     /**
      * Alertes AML d'un client.
      */
-    public function alerts(int $id): JsonResponse
+    public function alerts(Request $request, int $id): JsonResponse
     {
         try {
+
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
 
             $clientExists = DB::table('clients')
                 ->where('id', $id)

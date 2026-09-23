@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -17,7 +19,7 @@ class NetworkController extends Controller
      * L'endpoint prépare les données nécessaires au frontend
      * pour construire une visualisation réseau.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         try {
                         /*
@@ -25,7 +27,7 @@ class NetworkController extends Controller
              * CAISSES
              * =========================================================
              */
-            $caisses = DB::table('caisses as ca')
+            $caisseQuery = DB::table('caisses as ca')
                 ->select([
                     'ca.id',
                     'ca.code',
@@ -46,8 +48,19 @@ class NetworkController extends Controller
                           WHERE ag.caisse_id = ca.id) AS client_count'
                     ),
                 ])
-                ->orderBy('ca.code')
-                ->get();
+                ->orderBy('ca.code');
+
+            $scope = AgencyAccess::scopeFor($request->user());
+            if ($scope['type'] === AgencyAccess::CAISSE) {
+                $caisseQuery->where('ca.id', $scope['caisse_id'] ?? 0);
+            } elseif ($scope['type'] === AgencyAccess::AGENCY) {
+                $caisseQuery->whereExists(function ($query) use ($scope): void {
+                    $query->selectRaw('1')->from('agencies as scoped_agency')
+                        ->whereColumn('scoped_agency.caisse_id', 'ca.id')
+                        ->where('scoped_agency.id', $scope['agency_id'] ?? 0);
+                });
+            }
+            $caisses = $caisseQuery->get();
 
 
             /*
@@ -63,7 +76,7 @@ class NetworkController extends Controller
              * temporaire sur disque (cause exacte de l'erreur
              * "No space left on device" observée).
              */
-            $agencies = DB::table('agencies as ag')
+            $agencyQuery = DB::table('agencies as ag')
                 ->leftJoin(
                     'caisses as ca',
                     'ca.id',
@@ -112,8 +125,10 @@ class NetworkController extends Controller
                           AND al.priority = 'CRITICAL') AS critical_alert_count"
                     ),
                 ])
-                ->orderBy('ag.code')
-                ->get();
+                ->orderBy('ag.code');
+
+            AgencyAccess::constrain($agencyQuery, $request, 'ag.id');
+            $agencies = $agencyQuery->get();
 
 
             /*
@@ -133,8 +148,8 @@ class NetworkController extends Controller
                 'suspended_caisse_count' => $caisses
                     ->where('status', 'SUSPENDED')
                     ->count(),
-                'client_count' => (int) DB::table('clients')->count(),
-                'transaction_count' => (int) DB::table('transactions')->count(),
+                'client_count' => (int) $agencies->sum('client_count'),
+                'transaction_count' => (int) $agencies->sum('transaction_count'),
             ];
 
             /*

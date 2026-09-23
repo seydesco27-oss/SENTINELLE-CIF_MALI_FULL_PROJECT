@@ -65,7 +65,7 @@ class AccountTransactionController extends Controller
                     'ca.name as caisse_name',
                 ])
                 ->where('a.id', $id);
-            AgencyAccess::constrain($accountQuery, $request, 'c.agency_id');
+            AgencyAccess::constrain($accountQuery, $request, 'c.agency_id', 'a.account_manager_id');
             $account = $accountQuery->first();
 
 
@@ -76,10 +76,6 @@ class AccountTransactionController extends Controller
                     'message' =>
                         'Compte introuvable.',
                 ], 404);
-            }
-
-            if (AgencyAccess::restrictedAgencyId($request) !== null) {
-                unset($account->risk_score, $account->is_pep);
             }
 
 

@@ -79,7 +79,7 @@ function formatDate(value) {
 
 export default function AccountsList({ user, onLogout }) {
   const navigate = useNavigate();
-  const canViewCompliance = canAccess(user, "risk_analysis");
+  const canViewCompliance = canAccess(user, "account.view");
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

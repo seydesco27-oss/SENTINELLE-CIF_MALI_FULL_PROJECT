@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\ScreeningController;
 use App\Http\Controllers\Api\ReportsController;
 use App\Http\Controllers\Api\MlAssistController;
 use App\Http\Controllers\Api\MlScoreController;
+use App\Http\Controllers\Api\AdminUserController;
  use App\Http\Controllers\Api\ClientComplianceController;
  use App\Http\Controllers\Api\AccountMandateController;
 
@@ -41,9 +42,9 @@ Route::get('/health', [
 ]);
 
 Route::get('/dashboard', [
-    DashboardController::class,
-    'index'
-]);
+    AmlDashboardController::class,
+    'summary'
+])->middleware(['auth:sanctum', 'permission:nav.dashboard']);
 
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 
@@ -78,6 +79,13 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         'updateProfile'
     ]);
 
+    Route::get('/admin/users', [AdminUserController::class, 'index'])
+        ->middleware('permission:user.manage');
+    Route::post('/admin/users', [AdminUserController::class, 'store'])
+        ->middleware('permission:user.manage');
+    Route::patch('/admin/users/{id}', [AdminUserController::class, 'update'])
+        ->middleware('permission:user.manage');
+
     /*
     |--------------------------------------------------------------------------
     | CLIENTS
@@ -87,78 +95,78 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/clients', [
         ClientController::class,
         'index'
-    ]);
+    ])->middleware('permission:client.view');
 
     Route::post('/clients', [
         ClientController::class,
         'store'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:client.create');
 
     Route::put('/clients/{id}', [
         ClientController::class,
         'update'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:client.create');
 
      Route::patch('/clients/{id}/status', [
         ClientController::class,
         'updateStatus'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:client.status');
 
 
     Route::get('/clients/{id}', [
         ClientController::class,
         'show'
-    ]);
+    ])->middleware('permission:client.view');
 
     Route::get('/clients/{id}/profile', [
         ClientProfileController::class,
         'show'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:client.view');
 
     Route::get('/clients/{id}/accounts', [
         ClientAccountController::class,
         'index'
-    ]);
+    ])->middleware('permission:account.view');
 
     Route::get('/clients/{id}/transactions', [
         ClientActivityController::class,
         'transactions'
-    ]);
+    ])->middleware('permission:tx.view');
 
     Route::get('/clients/{id}/alerts', [
         ClientActivityController::class,
         'alerts'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::get('/clients/{id}/risk', [
         ClientRiskController::class,
         'show'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:client.view');
 
     Route::get('/clients/{id}/screening', [
         ClientScreeningController::class,
         'show'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:screening.view');
 
     Route::post('/clients/{id}/screening', [
         ClientScreeningController::class,
         'run'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:ml.use');
 
     Route::get('/clients/{id}/sanctions', [
         ClientScreeningController::class,
         'sanctions'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:screening.view');
 
     Route::get('/clients/{id}/pep', [
         ClientScreeningController::class,
         'pep'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:screening.view');
 
     Route::get('/clients/{id}/features', [
         ClientFeaturesController::class,
         'show'
-    ])->middleware('role:1,2');
+    ])->middleware('permission:ml.use');
 
 
 
@@ -167,42 +175,42 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 Route::get('/clients/{id}/compliance/summary', [
     ClientComplianceController::class,
     'summary',
-])->middleware('role:1,2,3');
+])->middleware('permission:client.view');
 
 Route::get('/clients/{id}/compliance/pep-rca', [
     ClientComplianceController::class,
     'pepRca',
-])->middleware('role:1,2,3');
+])->middleware('permission:client.view');
 
 Route::get('/clients/{id}/compliance/kyc', [
     ClientComplianceController::class,
     'kyc',
-])->middleware('role:1,2,3');
+])->middleware('permission:client.view');
 
 Route::get('/clients/{id}/compliance/averages', [
     ClientComplianceController::class,
     'averages',
-])->middleware('role:1,2,3');
+])->middleware('permission:client.view');
 
 Route::get('/clients/{id}/compliance/mandates', [
     ClientComplianceController::class,
     'mandates',
-])->middleware('role:1,2,3');
+])->middleware('permission:client.view');
 
 Route::get('/clients/{id}/compliance/assessments', [
     ClientComplianceController::class,
     'assessments',
-])->middleware('role:1,2,3');
+])->middleware('permission:screening.view');
 
 Route::get('/clients/{id}/compliance/network-links', [
     ClientComplianceController::class,
     'networkLinks',
-])->middleware('role:1,2,3');
+])->middleware('permission:screening.view');
 
 Route::get('/accounts/{id}/mandates', [
     AccountMandateController::class,
     'index',
-])->middleware('role:1,2,3');
+])->middleware('permission:account.view');
 
 
     /*
@@ -214,27 +222,27 @@ Route::get('/accounts/{id}/mandates', [
     Route::get('/accounts', [
         AccountController::class,
         'index'
-    ]);
+    ])->middleware('permission:account.view');
 
     Route::post('/accounts', [
         AccountController::class,
         'store'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:account.create');
 
     Route::get('/accounts/managers', [
         AccountController::class,
         'managers'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:account.create');
 
     Route::get('/accounts/{id}', [
         AccountController::class,
         'show'
-    ]);
+    ])->middleware('permission:account.view');
 
     Route::get('/accounts/{id}/transactions', [
         AccountTransactionController::class,
         'index'
-    ]);
+    ])->middleware('permission:tx.view');
 
     /*
     |--------------------------------------------------------------------------
@@ -245,47 +253,47 @@ Route::get('/accounts/{id}/mandates', [
     Route::get('/transactions', [
         TransactionController::class,
         'index'
-    ]);
+    ])->middleware('permission:tx.view');
 
     Route::get('/transactions/suspicious', [
         TransactionController::class,
         'suspicious'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::get('/transactions/{id}/ml-features', [
         TransactionMlController::class,
         'show'
-    ])->middleware('role:1,2');
+    ])->middleware('permission:ml.use');
 
     Route::get('/transactions/{id}/risk', [
         TransactionController::class,
         'risk'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:tx.view');
 
     Route::get('/transactions/{id}/alerts', [
         TransactionController::class,
         'alerts'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::get('/transactions/{id}/analysis', [
         TransactionAmlController::class,
         'analysis'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:tx.view');
 
     Route::post('/transactions/{id}/evaluate', [
         TransactionAmlController::class,
         'evaluate'
-    ])->middleware('role:1,2');
+    ])->middleware('permission:ml.use');
 
         Route::post('/transactions', [
         TransactionController::class,
         'store'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:tx.create');
 
     Route::get('/transactions/{id}', [
         TransactionController::class,
         'show'
-    ]);
+    ])->middleware('permission:tx.view');
 
     /*
     |--------------------------------------------------------------------------
@@ -300,58 +308,63 @@ Route::get('/accounts/{id}/mandates', [
     Route::get('/alerts', [
         AlertController::class,
         'index'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::get('/alerts/open', [
         AlertController::class,
         'open'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::get('/alerts/high-risk', [
         AlertController::class,
         'highRisk'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::get('/alerts/{id}/client', [
         AlertController::class,
         'client'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::get('/alerts/{id}/transaction', [
         AlertController::class,
         'transaction'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::get('/alerts/{id}/actions', [
         AlertController::class,
         'actions'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::get('/alerts/{id}/investigations', [
         AlertController::class,
         'investigations'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:investigation.view');
 
     Route::get('/alerts/{id}/risk', [
         AlertController::class,
         'risk'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     Route::post('/alerts/{id}/ml-score', [
         AlertController::class,
         'scoreWithMl'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:ml.use');
 
-        Route::patch('/alerts/{id}/decision', [
+    Route::patch('/alerts/{id}/decision', [
         AlertController::class,
         'decision'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.decide');
+
+    Route::patch('/alerts/{id}/escalate', [
+        AlertController::class,
+        'escalate'
+    ])->middleware('permission:alert.escalate');
 
 
     Route::get('/alerts/{id}', [
         AlertController::class,
         'show'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.view');
 
     /*
     |--------------------------------------------------------------------------
@@ -362,12 +375,12 @@ Route::get('/accounts/{id}/mandates', [
     Route::post('/aml/process', [
         AmlController::class,
         'process'
-    ])->middleware('role:1,2');
+    ])->middleware('permission:engine.configure');
 
     Route::post('/aml/batch', [
         AmlBatchController::class,
         'process'
-    ])->middleware('role:1,2');
+    ])->middleware('permission:engine.configure');
 
     /*
     |--------------------------------------------------------------------------
@@ -378,17 +391,17 @@ Route::get('/accounts/{id}/mandates', [
     Route::get('/ml/customer-features', [
         MlController::class,
         'customerFeatures'
-    ])->middleware('role:1,2');
+    ])->middleware('permission:ml.use');
 
     Route::get('/ml/transaction-features', [
         MlController::class,
         'transactionFeatures'
-    ])->middleware('role:1,2');
+    ])->middleware('permission:ml.use');
 
     Route::get('/ml/suspicious-transactions', [
         MlController::class,
         'suspiciousTransactions'
-    ])->middleware('role:1,2');
+    ])->middleware('permission:ml.use');
 
     /*
     |--------------------------------------------------------------------------
@@ -401,27 +414,27 @@ Route::get('/accounts/{id}/mandates', [
         Route::get('/summary', [
             AmlDashboardController::class,
             'summary'
-        ])->middleware('role:1,2,3');
+        ])->middleware('permission:nav.dashboard');
 
         Route::get('/risk-distribution', [
             AmlDashboardController::class,
             'riskDistribution'
-        ])->middleware('role:1,2,3');
+        ])->middleware('permission:nav.dashboard');
 
         Route::get('/alerts', [
             AmlDashboardController::class,
             'alerts'
-        ])->middleware('role:1,2,3');
+        ])->middleware('permission:nav.dashboard');
 
         Route::get('/transactions', [
             AmlDashboardController::class,
             'transactions'
-        ])->middleware('role:1,2,3');
+        ])->middleware('permission:nav.dashboard');
 
         Route::get('/alerts-trend', [
             AmlDashboardController::class,
             'alertsTrend'
-        ])->middleware('role:1,2,3');
+        ])->middleware('permission:nav.dashboard');
 
     });
 
@@ -434,22 +447,22 @@ Route::get('/accounts/{id}/mandates', [
 Route::get('/investigations', [
     InvestigationController::class,
     'index'
-])->middleware('role:1,2,3');
+])->middleware('permission:investigation.view');
 
 Route::get('/investigations/{id}', [
     InvestigationController::class,
     'show'
-])->middleware('role:1,2,3');
+])->middleware('permission:investigation.view');
 
 Route::post('/investigations', [
     InvestigationController::class,
     'store'
-])->middleware('role:1,2,3');
+])->middleware('permission:investigation.manage');
 
 Route::patch('/investigations/{id}/close', [
     InvestigationController::class,
     'close'
-])->middleware('role:1,2,3');
+])->middleware('permission:investigation.manage');
 
 /* 
    CENTIF DECLARATIONS
@@ -457,21 +470,21 @@ Route::patch('/investigations/{id}/close', [
     Route::get('/centif/declarations', [
         CentifDeclarationController::class,
         'index'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:centif.view');
     Route::post('/centif/declarations', [
         CentifDeclarationController::class,
         'store'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:centif.manage');
 
     Route::get('/centif/declarations/{id}', [
         CentifDeclarationController::class,
         'show'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:centif.view');
 
     Route::patch('/centif/declarations/{id}', [
         CentifDeclarationController::class,
         'update'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:centif.manage');
 
 
 
@@ -484,12 +497,12 @@ Route::patch('/investigations/{id}/close', [
 Route::get('/audit', [
     AuditController::class,
     'index'
-])->middleware('role:1,2');
+])->middleware('permission:audit.view');
 
 Route::get('/audit/{id}', [
     AuditController::class,
     'show'
-])->middleware('role:1,2');
+])->middleware('permission:audit.view');
 
 
 /*
@@ -501,40 +514,40 @@ Route::get('/audit/{id}', [
 Route::get('/network', [
     NetworkController::class,
     'index'
-])->middleware('role:1,2,3');
+])->middleware('permission:nav.network');
 
 
     Route::get('/screening', [
         ScreeningController::class,
         'index'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:screening.view');
 
     Route::get('/reports/summary', [
         ReportsController::class,
         'summary'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:report.view');
 
     Route::post('/clients/{id}/report', [
         ClientController::class,
         'report'
-    ])->middleware('role:1,2,3');
+    ])->middleware('permission:alert.signal');
 
 
 // --- Assist (templates / contexte dossier) ---
-Route::get('/ml/assist/alert/{id}', [MlAssistController::class, 'alertContext'])->middleware('role:1,2,3');
-Route::get('/ml/assist/client/{id}', [MlAssistController::class, 'clientContext'])->middleware('role:1,2,3');
-Route::post('/ml/assist', [MlAssistController::class, 'assist'])->middleware('role:1,2,3');
-Route::post('/ml/chat', [MlAssistController::class, 'chat'])->middleware('role:1,2,3');
+Route::get('/ml/assist/alert/{id}', [MlAssistController::class, 'alertContext'])->middleware('permission:ml.use');
+Route::get('/ml/assist/client/{id}', [MlAssistController::class, 'clientContext'])->middleware('permission:ml.use');
+Route::post('/ml/assist', [MlAssistController::class, 'assist'])->middleware('permission:ml.use');
+Route::post('/ml/chat', [MlAssistController::class, 'chat'])->middleware('permission:ml.use');
 
 // --- Score ML (microservice Python) ---
-Route::get('/ml/health', [MlScoreController::class, 'health'])->middleware('role:1,2,3');
-Route::post('/ml/score', [MlScoreController::class, 'score'])->middleware('role:1,2');
+Route::get('/ml/health', [MlScoreController::class, 'health'])->middleware('permission:ml.use');
+Route::post('/ml/score', [MlScoreController::class, 'score'])->middleware('permission:ml.use');
 
 
 Route::get('/clients/{id}/compliance/dual-risk', [
     ClientComplianceController::class,
     'dualRisk',
-])->middleware('role:1,2,3');
+])->middleware('permission:client.view');
 
 
 });

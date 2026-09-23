@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\MlRiskScoringService;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -53,6 +54,15 @@ class MlScoreController extends Controller
                 'success' => false,
                 'message' => 'alert_id, transaction_id ou client_id requis.',
             ], 422);
+        }
+
+        $authorized = match (true) {
+            $request->integer('alert_id') > 0 => AgencyAccess::canAccessAlert($request, $request->integer('alert_id')),
+            $request->integer('transaction_id') > 0 => AgencyAccess::canAccessTransaction($request, $request->integer('transaction_id')),
+            default => AgencyAccess::canAccessClient($request, $request->integer('client_id')),
+        };
+        if (! $authorized) {
+            return response()->json(['success' => false, 'message' => 'Dossier introuvable.'], 404);
         }
 
         try {

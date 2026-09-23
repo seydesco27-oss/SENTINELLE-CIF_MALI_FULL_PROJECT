@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -18,10 +20,10 @@ class ClientComplianceController extends Controller
      * GET /clients/{id}/compliance/pep-rca
      * Vue v_client_pep_rca_profile + parties liées.
      */
-    public function pepRca(int $id): JsonResponse
+    public function pepRca(Request $request, int $id): JsonResponse
     {
         try {
-            if (!$this->clientExists($id)) {
+            if (!$this->clientExists($request, $id)) {
                 return $this->notFound($id);
             }
 
@@ -84,10 +86,10 @@ class ClientComplianceController extends Controller
     /**
      * GET /clients/{id}/compliance/kyc
      */
-    public function kyc(int $id): JsonResponse
+    public function kyc(Request $request, int $id): JsonResponse
     {
         try {
-            if (!$this->clientExists($id)) {
+            if (!$this->clientExists($request, $id)) {
                 return $this->notFound($id);
             }
 
@@ -116,10 +118,10 @@ class ClientComplianceController extends Controller
      * GET /clients/{id}/compliance/averages
      * Moyennes 30j client (+ comptes si demandé via ?with_accounts=1)
      */
-    public function averages(int $id): JsonResponse
+    public function averages(Request $request, int $id): JsonResponse
     {
         try {
-            if (!$this->clientExists($id)) {
+            if (!$this->clientExists($request, $id)) {
                 return $this->notFound($id);
             }
 
@@ -152,10 +154,10 @@ class ClientComplianceController extends Controller
      * GET /clients/{id}/compliance/mandates
      * Mandats sur tous les comptes du client.
      */
-    public function mandates(int $id): JsonResponse
+    public function mandates(Request $request, int $id): JsonResponse
     {
         try {
-            if (!$this->clientExists($id)) {
+            if (!$this->clientExists($request, $id)) {
                 return $this->notFound($id);
             }
 
@@ -209,10 +211,10 @@ class ClientComplianceController extends Controller
      * GET /clients/{id}/compliance/assessments
      * risk_assessments AML (CENTIF, LARGE_AMOUNT, etc.) — couche déterministe.
      */
-    public function assessments(int $id): JsonResponse
+    public function assessments(Request $request, int $id): JsonResponse
     {
         try {
-            if (!$this->clientExists($id)) {
+            if (!$this->clientExists($request, $id)) {
                 return $this->notFound($id);
             }
 
@@ -251,10 +253,10 @@ class ClientComplianceController extends Controller
      * GET /clients/{id}/compliance/network-links
      * Liens contrepartie récurrents (vue seuilée).
      */
-    public function networkLinks(int $id): JsonResponse
+    public function networkLinks(Request $request, int $id): JsonResponse
     {
         try {
-            if (!$this->clientExists($id)) {
+            if (!$this->clientExists($request, $id)) {
                 return $this->notFound($id);
             }
 
@@ -284,10 +286,10 @@ class ClientComplianceController extends Controller
      * GET /clients/{id}/compliance/summary
      * Agrégat léger pour Client 360 / Assist.
      */
-    public function summary(int $id): JsonResponse
+    public function summary(Request $request, int $id): JsonResponse
     {
         try {
-            if (!$this->clientExists($id)) {
+            if (!$this->clientExists($request, $id)) {
                 return $this->notFound($id);
             }
 
@@ -330,10 +332,10 @@ class ClientComplianceController extends Controller
      * GET /clients/{id}/compliance/dual-risk
      * Scores AML déterministes et ML séparés — jamais fusionnés côté API.
      */
-    public function dualRisk(int $id): JsonResponse
+    public function dualRisk(Request $request, int $id): JsonResponse
     {
         try {
-            if (!$this->clientExists($id)) {
+            if (!$this->clientExists($request, $id)) {
                 return $this->notFound($id);
             }
 
@@ -407,9 +409,9 @@ class ClientComplianceController extends Controller
 
     /* ------------------------------------------------------------------ */
 
-    private function clientExists(int $id): bool
+    private function clientExists(Request $request, int $id): bool
     {
-        return DB::table('clients')->where('id', $id)->exists();
+        return AgencyAccess::canAccessClient($request, $id);
     }
 
     private function notFound(int $id): JsonResponse

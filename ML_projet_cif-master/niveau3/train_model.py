@@ -40,6 +40,36 @@ from features import (
 BASE_DIR = Path(__file__).resolve().parent
 
 
+def build_training_frame(
+    transactions: pd.DataFrame,
+    clients: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """Construit un jeu d'entraînement explicite à partir de données en mémoire.
+
+    Cette entrée pure est utilisée par les tests et par les futurs pipelines
+    d'import. Les statistiques comportementales sont calculées sur le jeu
+    fourni, sans lecture implicite de fichiers.
+    """
+    base = build_base_frame(transactions, clients)
+    enriched = compute_features(base, reference=base)
+    return extract_xy(enriched)
+
+
+def combine_scores(
+    behavior_score: float,
+    ppe_score: float,
+    behavior_weight: float = 0.70,
+    ppe_weight: float = 0.30,
+) -> float:
+    """Combine deux probabilités internes sans modifier les scores AML affichés."""
+    behavior = float(np.clip(behavior_score, 0.0, 1.0))
+    ppe = float(np.clip(ppe_score, 0.0, 1.0))
+    total_weight = behavior_weight + ppe_weight
+    if total_weight <= 0:
+        raise ValueError("La somme des poids doit être strictement positive.")
+    return (behavior * behavior_weight + ppe * ppe_weight) / total_weight
+
+
 def load_dataset():
     clients = pd.read_csv(BASE_DIR / "clients.csv")
     transactions = pd.read_csv(BASE_DIR / "transactions.csv", parse_dates=["date_transaction"])

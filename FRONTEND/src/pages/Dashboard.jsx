@@ -3,8 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import DemoRail from "../components/DemoRail";
 import AssistPanel from "../components/AssistPanel";
-import AssistCue from "../components/AssistCue";
-import "../components/AssistCue.css";
+import { canAccess } from "../auth/access";
 import {
   getDashboardSummary,
   getMlHealth,
@@ -122,7 +121,9 @@ function formatDateTime(value) {
 }
 
 export default function Dashboard({ user, onLogout }) {
-  const [assistOpen, setAssistOpen] = useState(false);
+  const canUseAssist = canAccess(user, "ml.use");
+  const canRunDemo = canAccess(user, "demo.run");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -136,8 +137,6 @@ export default function Dashboard({ user, onLogout }) {
 
   const [filters, setFilters] = useState({
     period: "today",
-    caisse: "ALL",
-    agence: "ALL",
     risk: "ALL",
     type: "ALL",
     status: "ALL",
@@ -160,7 +159,9 @@ export default function Dashboard({ user, onLogout }) {
           getPriorityAlerts({ limit: 12 }),
           getRiskDistribution(),
           getAlertTrend(trendDays),
-          getMlHealth().catch(() => ({ success: false })),
+          canUseAssist
+            ? getMlHealth().catch(() => ({ success: false }))
+            : Promise.resolve({ success: false, restricted: true }),
         ]);
         if (cancelled) return;
 
@@ -192,10 +193,9 @@ export default function Dashboard({ user, onLogout }) {
     return () => {
       cancelled = true;
     };
-  }, [filters.period]);
+  }, [filters.period, canUseAssist]);
 
-  // Filtre local sur la file déjà chargée — type/statut/priorité + fenêtre période
-  // Note : caisse/agence non renvoyés par /alerts/high-risk aujourd’hui → UI prête, API à enrichir
+  // Filtre local sur la file déjà chargée — type/statut/priorité + fenêtre période.
   const filteredAlerts = useMemo(() => {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -243,7 +243,6 @@ export default function Dashboard({ user, onLogout }) {
       ? highRiskSummary.critical_total
       : criticalAlerts.length;
 
-  const riskyClients = summary?.clients?.risky ?? "—";
   const clientsTotal = summary?.clients?.total ?? "—";
 
   const priorityQueue = filteredAlerts.slice(0, 10);
@@ -272,7 +271,7 @@ export default function Dashboard({ user, onLogout }) {
     <div className="app-shell">
       <Sidebar user={user} onLogout={onLogout} />
       <div className="app-main">
-        <DemoRail />
+        <DemoRail user={user} />
 
         <section className="page-frame dashboard-v2">
           <header className="page-heading dashboard-heading">
@@ -287,13 +286,13 @@ export default function Dashboard({ user, onLogout }) {
               </p>
             </div>
             <div className="dashboard-heading-actions">
-              <button
+              {canRunDemo && <button
                 type="button"
                 className="demo-launch"
                 onClick={() => navigate("/dashboard?demo=1&step=1")}
               >
                 Lancer la démo guidée
-              </button>
+              </button>}
               <div className="system-live system-live-dual" title="Couches séparées : AML déterministe (BD) ≠ assistance ML">
                 <div className="system-live-row">
                   <span className={error ? "is-ml-offline" : "is-ml-online"} />
@@ -304,7 +303,9 @@ export default function Dashboard({ user, onLogout }) {
                   <span className={mlHealth?.success ? "is-ml-online is-ml-layer" : "is-ml-offline"} />
                   <span className="system-live-label is-ml">ML</span>
                   <small>
-                    {mlHealth?.success
+                    {!canUseAssist
+                      ? "Réservé aux profils conformité"
+                      : mlHealth?.success
                       ? `${mlHealth.data?.model || "Modèle"} · ${mlHealth.data?.feature_count ?? "—"} feat.`
                       : "Service Python indisponible (port 8100)"}
                   </small>
@@ -315,40 +316,19 @@ export default function Dashboard({ user, onLogout }) {
 
           {error && <div className="dash-error">{error}</div>}
 
-          <AssistCue
-            title="Sentinelle Assist — copilote de conformité"
-            text="Résumez une alerte prioritaire, expliquez les signaux AML et préparez un brouillon d’analyse. Aide non décisionnelle."
-            ctaLabel="Ouvrir l’agent"
-            onOpen={() => setAssistOpen(true)}
-          />
-
-          {/* Raccourcis scénarios PRELIM — admin / jury, données seed réelles */}
-          <section className="admin-scenario-strip" aria-label="Scénarios de démonstration">
+          {canRunDemo && <section className="admin-scenario-strip" aria-label="Scénarios de démonstration">
             <span className="admin-scenario-label">SCÉNARIOS PRELIM</span>
-            <button type="button" onClick={() => navigate("/clients/104")}>
-              CENTIF 15M
-            </button>
-            <button type="button" onClick={() => navigate("/clients/102")}>
-              PEP
-            </button>
-            <button type="button" onClick={() => navigate("/clients/103")}>
-              RCA
-            </button>
-            <button type="button" onClick={() => navigate("/clients/105")}>
-              Hub réseau
-            </button>
-            <button type="button" onClick={() => navigate("/clients/101")}>
-              Baseline
-            </button>
-            <button type="button" className="admin-scenario-muted" onClick={() => navigate("/centif")}>
-              File CENTIF →
-            </button>
-          </section>
+            <button type="button" onClick={() => navigate("/dashboard?demo=1&step=1")}>Parcours guidé</button>
+            <button type="button" onClick={() => navigate("/centif")}>CENTIF 15M</button>
+            <button type="button" onClick={() => navigate("/screening")}>PEP / RCA / sanctions</button>
+            <button type="button" onClick={() => navigate("/transactions")}>Mandataires</button>
+            <button type="button" className="admin-scenario-muted" onClick={() => navigate("/ml")}>Double lecture AML / ML →</button>
+          </section>}
 
           {/* Filtres — structure Figma ; options alignées seed / aml_rules */}
           <section className="supervision-filters" aria-label="Filtres de supervision">
-            <div className="filter-label">PÉRIMÈTRE</div>
-            {Object.keys(FILTER_OPTIONS).map((key) => (
+            <div className="filter-label">VUE</div>
+            {["period"].map((key) => (
               <label key={key}>
                 <span>{FILTER_LABELS[key]}</span>
                 <select
@@ -365,11 +345,27 @@ export default function Dashboard({ user, onLogout }) {
             ))}
             <button
               type="button"
+              className="filter-more"
+              aria-expanded={showAdvancedFilters}
+              onClick={() => setShowAdvancedFilters((current) => !current)}
+            >
+              {showAdvancedFilters ? "Masquer les filtres" : "Plus de filtres"}
+            </button>
+            {showAdvancedFilters && ["risk", "type", "status"].map((key) => (
+              <label key={key} className="filter-advanced">
+                <span>{FILTER_LABELS[key]}</span>
+                <select value={filters[key]} onChange={(e) => setFilter(key, e.target.value)}>
+                  {FILTER_OPTIONS[key].map(([label, value]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            <button
+              type="button"
               onClick={() =>
                 setFilters({
                   period: "today",
-                  caisse: "ALL",
-                  agence: "ALL",
                   risk: "ALL",
                   type: "ALL",
                   status: "ALL",
@@ -404,40 +400,7 @@ export default function Dashboard({ user, onLogout }) {
                   <strong>{criticalCount}</strong>
                   <p>Intervention prioritaire requise</p>
                 </article>
-                <article className="kpi-card tone-amber">
-                  <span>CLIENTS À RISQUE ÉLEVÉ</span>
-                  <strong>
-                    {typeof riskyClients === "number"
-                      ? riskyClients.toLocaleString("fr-FR")
-                      : riskyClients}
-                  </strong>
-                  <p>Indicateur portefeuille global</p>
-                </article>
               </div>
-
-              {criticalCount > 0 && (
-                <div className="critical-work">
-                  <strong>
-                    {criticalCount} alerte{criticalCount > 1 ? "s" : ""} critique
-                    {criticalCount > 1 ? "s" : ""} requiert une action
-                  </strong>
-                  <div>
-                    {criticalAlerts.slice(0, 4).map((alert) => (
-                      <button
-                        key={alert.id}
-                        type="button"
-                        onClick={() => navigate(`/alertes/${alert.id}`)}
-                      >
-                        {alert.reference || `ALT-${alert.id}`} ·{" "}
-                        {alert.client_name || alert.customer_name || "Client"}
-                      </button>
-                    ))}
-                  </div>
-                  <button type="button" onClick={() => navigate("/alertes")}>
-                    Accéder à la file →
-                  </button>
-                </div>
-              )}
 
               <div className="supervision-grid">
                 <article className="dash-panel">
@@ -445,6 +408,7 @@ export default function Dashboard({ user, onLogout }) {
                     <div>
                       <p className="eyebrow">DOSSIERS PRIORITAIRES</p>
                       <h2>File d’intervention</h2>
+                      {criticalCount > 0 && <span className="queue-critical-pill">{criticalCount} critique{criticalCount > 1 ? "s" : ""}</span>}
                     </div>
                     <button type="button" onClick={() => navigate("/alertes")}>
                       Toutes les alertes →
@@ -507,7 +471,7 @@ export default function Dashboard({ user, onLogout }) {
                       <p className="eyebrow">EXPOSITION AU RISQUE</p>
                       <h2>Répartition portefeuille</h2>
                     </div>
-                    <span className="chart-key">Vue globale</span>
+                    <span className="chart-key">Périmètre actif</span>
                   </header>
                   <div className="risk-bars">
                     {risks.length === 0 ? (
@@ -535,56 +499,14 @@ export default function Dashboard({ user, onLogout }) {
                 </article>
               </div>
 
-              <div className="supervision-grid bottom">
-                <article className="dash-panel">
-                  <header>
-                    <div>
-                      <p className="eyebrow">PORTEFEUILLE</p>
-                      <h2>Indicateurs clients</h2>
-                    </div>
-                    <span className="chart-key">API summary</span>
-                  </header>
-                  <div className="portfolio-stats">
-                    <div>
-                      <span>Total clients</span>
-                      <strong>
-                        {typeof clientsTotal === "number"
-                          ? clientsTotal.toLocaleString("fr-FR")
-                          : clientsTotal}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>À risque élevé+</span>
-                      <strong>
-                        {typeof riskyClients === "number"
-                          ? riskyClients.toLocaleString("fr-FR")
-                          : riskyClients}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Taux d’exposition</span>
-                      <strong>
-                        {summary?.clients?.risk_rate != null
-                          ? `${summary.clients.risk_rate} %`
-                          : "—"}
-                      </strong>
-                    </div>
-                  </div>
-                  <footer>
-                    <span>Source : /dashboard/summary</span>
-                    <button type="button" onClick={() => navigate("/clients")}>
-                      Ouvrir les clients →
-                    </button>
-                  </footer>
-                </article>
-
+              <div className="supervision-grid bottom is-single">
                 <article className="dash-panel chart-panel">
                   <header>
                     <div>
                       <p className="eyebrow">TENDANCE</p>
                       <h2>Évolution des alertes</h2>
                     </div>
-                    <span className="chart-key">7 derniers jours · agrégat global</span>
+                    <span className="chart-key">7 derniers jours · périmètre actif</span>
                   </header>
                   <div className="chart-wrap trend-bars-wrap">
                     {alertTrend.length === 0 ? (
@@ -621,13 +543,12 @@ export default function Dashboard({ user, onLogout }) {
         </section>
       </div>
 
-        <AssistPanel
+        {canUseAssist && <AssistPanel
+          user={user}
           objectType="alert"
           objectId={criticalAlerts?.[0]?.id || priorityAlerts?.[0]?.id || null}
           title="Assist — supervision"
-          open={assistOpen}
-          onOpenChange={setAssistOpen}
-        />
+        />}
 
     </div>
   );

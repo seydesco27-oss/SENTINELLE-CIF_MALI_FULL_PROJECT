@@ -248,6 +248,30 @@ export const decideAlert = async (id, decision, comment) => {
   return response.data;
 };
 
+export const getAdminUsers = async (params = {}) => {
+  const response = await api.get("/admin/users", { params });
+  return response.data;
+};
+
+export const createAdminUser = async (payload) => {
+  const response = await api.post("/admin/users", payload);
+  return response.data;
+};
+
+export const updateAdminUser = async (id, payload) => {
+  const response = await api.patch(`/admin/users/${id}`, payload);
+  return response.data;
+};
+
+/**
+ * PATCH /alerts/{id}/escalate
+ * Place l'alerte en analyse et journalise le motif d'escalade.
+ */
+export const escalateAlert = async (id, comment) => {
+  const response = await api.patch(`/alerts/${id}/escalate`, { comment });
+  return response.data;
+};
+
 // ---------- INVESTIGATIONS ----------
 /**
  * POST /investigations

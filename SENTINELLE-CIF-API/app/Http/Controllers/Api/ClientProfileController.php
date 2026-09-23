@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -14,9 +16,13 @@ class ClientProfileController extends Controller
      *
      * Profil Client 360° : KYC, agence/caisse, comptes, AML et features ML.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
+
             $amlProfile = DB::table('v_customer_aml_profile')
                 ->where('client_id', $id)
                 ->first();

@@ -146,34 +146,37 @@ const NAV_SECTIONS = [
   {
     label: "SUPERVISION",
     items: [
-      { to: "/dashboard", label: "Tableau de bord", icon: "dashboard", permission: "dashboard" },
-      { to: "/agences", label: "Réseau caisses/agences", icon: "network", permission: "network" },
-      { to: "/alertes", label: "Alertes", icon: "alert", badgeKey: "open_alerts", permission: "alerts" },
-      { to: "/investigations", label: "Investigations", icon: "investigation", permission: "investigations" },
-      { to: "/centif", label: "Déclarations CENTIF", icon: "centif", permission: "centif" },
+      { to: "/dashboard", label: "Tableau de bord", icon: "dashboard", permission: "nav.dashboard" },
+      { to: "/agences", label: "Réseau caisses/agences", icon: "network", permission: "nav.network" },
+      { to: "/alertes", label: "Alertes", icon: "alert", badgeKey: "open_alerts", permission: "nav.alerts" },
+      { to: "/investigations", label: "Investigations", icon: "investigation", permission: "nav.investigations" },
+      { to: "/centif", label: "Déclarations CENTIF", icon: "centif", permission: "nav.centif" },
     ],
   },
   {
     label: "DONNÉES",
     items: [
-      { to: "/clients", label: "Clients", icon: "clients", permission: "clients" },
-      { to: "/comptes", label: "Comptes", icon: "accounts", permission: "accounts" },
-      { to: "/transactions", label: "Transactions", icon: "transactions", permission: "transactions" },
+      { to: "/clients", label: "Clients", icon: "clients", permission: "nav.clients" },
+      { to: "/comptes", label: "Comptes", icon: "accounts", permission: "nav.accounts" },
+      { to: "/transactions", label: "Transactions", icon: "transactions", permission: "nav.transactions" },
     ],
   },
   {
     label: "ANALYSE",
     items: [
-      { to: "/screening", label: "Screening PEP/Sanctions", icon: "screening", permission: "screening" },
-      { to: "/analyse-risque", label: "Analyse & Risque", icon: "risk", permission: "risk_analysis" },
-      { to: "/ml", label: "Intelligence ML", icon: "ml", permission: "ml" },
-      { to: "/rapports", label: "Rapports", icon: "reports", permission: "reports" },
-      { to: "/audit", label: "Journal d'audit", icon: "audit", permission: "audit" },
+      { to: "/screening", label: "Screening PEP/Sanctions", icon: "screening", permission: "nav.screening" },
+      { to: "/analyse-risque", label: "Analyse & Risque", icon: "risk", permission: "nav.analyse" },
+      { to: "/ml", label: "Intelligence ML", icon: "ml", permission: "nav.ml" },
+      { to: "/rapports", label: "Rapports", icon: "reports", permission: "nav.reports" },
+      { to: "/audit", label: "Journal d'audit", icon: "audit", permission: "nav.audit" },
     ],
   },
   {
     label: "SYSTÈME",
-    items: [{ to: "/parametres", label: "Mon compte", icon: "settings", permission: "settings" }],
+    items: [
+      { to: "/admin/utilisateurs", label: "Utilisateurs", icon: "clients", permission: "nav.users" },
+      { to: "/parametres", label: "Mon compte", icon: "settings", permission: "nav.settings" },
+    ],
   },
 ];
 
@@ -190,7 +193,7 @@ export default function Sidebar({ user, onLogout }) {
   });
 
   useEffect(() => {
-    if (!canAccess(user, "alerts")) {
+    if (!canAccess(user, "nav.alerts")) {
       return undefined;
     }
 

@@ -154,7 +154,6 @@ class GroqChatClient
             || str_contains($message, 'code=tool_use_failed')
             || str_contains($message, 'HTTP 404')
             || str_contains($message, 'Réponse LLM vide')
-            || str_contains($message, 'Réponse LLM tronquée')
-            || $e instanceof ConnectionException;
+            || str_contains($message, 'Réponse LLM tronquée');
     }
 }

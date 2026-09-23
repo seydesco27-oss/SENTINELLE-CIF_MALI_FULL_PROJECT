@@ -16,6 +16,27 @@ CIF DigiCoop-WA+ : filtrage des clients LBC/FT/FP**.
 
 WampServer doit fournir MySQL avec la base `digi_aml`.
 
+Depuis la racine du projet, la commande recommandée démarre le modèle ML,
+l'API et le frontend, puis vérifie leurs endpoints :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-sentinelle.ps1
+```
+
+L'application est ensuite disponible sur `http://127.0.0.1:5173`.
+
+Au premier démarrage du service ML, si son environnement existe mais ne
+contient pas encore les dépendances :
+
+```powershell
+cd ML_projet_cif-master
+.\.venv\Scripts\python.exe -m ensurepip --upgrade
+.\.venv\Scripts\python.exe -m pip install -r dossier\requirements.txt
+cd ..
+```
+
+Le démarrage manuel reste possible avec trois terminaux.
+
 Terminal 1, service ML :
 
 ```powershell
@@ -58,7 +79,9 @@ LLM_FALLBACK_MODELS=qwen/qwen3.8-27b,openai/gpt-oss-20b
 ```
 
 Les modèles principal et de secours ont des quotas séparés : une limite de débit
-ou un modèle inaccessible provoque une bascule automatique sans inventer de réponse locale.
+ou un modèle inaccessible provoque une bascule automatique. Si le fournisseur
+est injoignable, l’assistant active son moteur local déterministe et répond à
+partir des données autorisées de l’application.
 
 Après toute modification de `.env` :
 

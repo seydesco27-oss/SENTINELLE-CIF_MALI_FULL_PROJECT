@@ -62,6 +62,11 @@
   color: #fff;
 }
 
+.demo-actions button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .demo-actions .close {
   border-color: transparent;
   color: #8a93ab;

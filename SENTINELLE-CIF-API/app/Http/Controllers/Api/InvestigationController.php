@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +54,7 @@ class InvestigationController extends Controller
                     '=',
                     'a.transaction_id'
                 )
+                ->leftJoin('accounts as acc', 'acc.id', '=', 't.account_id')
                 ->select([
                     'i.id',
                     'i.alert_id',
@@ -105,6 +107,13 @@ class InvestigationController extends Controller
                         END AS investigation_status
                     "),
                 ]);
+
+            AgencyAccess::constrain(
+                $query,
+                $request,
+                DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+                'acc.account_manager_id'
+            );
 
             if ($request->filled('status')) {
                 $status = strtoupper(trim($request->query('status')));
@@ -183,7 +192,7 @@ class InvestigationController extends Controller
  *
  * GET /api/v1/investigations/{id}
  */
-public function show($id): JsonResponse
+public function show(Request $request, $id): JsonResponse
 {
     try {
 
@@ -225,9 +234,12 @@ public function show($id): JsonResponse
          * assigned_user -> users.id
          * alert_id      -> alerts.id
          */
-        $investigation = DB::table('investigations as i')
+        $query = DB::table('investigations as i')
             ->leftJoin('users as u', 'u.id', '=', 'i.assigned_user')
             ->leftJoin('alerts as a', 'a.id', '=', 'i.alert_id')
+            ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
+            ->leftJoin('transactions as t', 't.id', '=', 'a.transaction_id')
+            ->leftJoin('accounts as acc', 'acc.id', '=', 't.account_id')
             ->select([
                 'i.id',
                 'i.alert_id',
@@ -248,8 +260,15 @@ public function show($id): JsonResponse
                 'a.status as alert_status',
                 'a.final_score as alert_score',
             ])
-            ->where('i.id', $investigationId)
-            ->first();
+            ->where('i.id', $investigationId);
+
+        AgencyAccess::constrain(
+            $query,
+            $request,
+            DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+            'acc.account_manager_id'
+        );
+        $investigation = $query->first();
 
         if (!$investigation) {
             return response()->json([
@@ -291,7 +310,23 @@ public function show($id): JsonResponse
         try {
             $alertId = (int) $request->input('alert_id');
 
-            if ($alertId <= 0 || !DB::table('alerts')->where('id', $alertId)->exists()) {
+            $alertQuery = DB::table('alerts as a')
+                ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
+                ->leftJoin('transactions as t', 't.id', '=', 'a.transaction_id')
+                ->leftJoin('accounts as acc', 'acc.id', '=', 't.account_id')
+                ->where('a.id', $alertId);
+            AgencyAccess::constrain(
+                $alertQuery,
+                $request,
+                DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+                'acc.account_manager_id'
+            );
+
+            $alert = $alertId > 0
+                ? $alertQuery->select(['a.id', 'a.status'])->first()
+                : null;
+
+            if (! $alert) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Alerte introuvable.',
@@ -299,12 +334,29 @@ public function show($id): JsonResponse
                 ], 422);
             }
 
+            if (in_array(strtoupper((string) $alert->status), ['CLOSED', 'DISMISSED', 'RESOLVED'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Impossible d’ouvrir une investigation sur une alerte clôturée.',
+                ], 409);
+            }
+
+            if (DB::table('investigations')->where('alert_id', $alertId)->whereNull('closed_at')->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Une investigation est déjà ouverte sur cette alerte.',
+                ], 409);
+            }
+
             $assignedUser = $request->input('assigned_user');
 
             if ($assignedUser !== null) {
                 $assignedUser = (int) $assignedUser;
 
-                if (!DB::table('users')->where('id', $assignedUser)->exists()) {
+                $userQuery = DB::table('users')->where('id', $assignedUser);
+                AgencyAccess::constrain($userQuery, $request, 'agency_id');
+
+                if (! $userQuery->exists()) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Utilisateur assigné introuvable.',
@@ -312,14 +364,28 @@ public function show($id): JsonResponse
                 }
             }
 
-            $investigationId = DB::table('investigations')->insertGetId([
-                'alert_id' => $alertId,
-                'assigned_user' => $assignedUser,
-                'decision' => null,
-                'comment' => null,
-                'started_at' => now(),
-                'closed_at' => null,
-            ]);
+            $userId = $request->user()->id;
+            $investigationId = DB::transaction(function () use ($alertId, $assignedUser, $userId) {
+                $id = DB::table('investigations')->insertGetId([
+                    'alert_id' => $alertId,
+                    'assigned_user' => $assignedUser,
+                    'decision' => null,
+                    'comment' => null,
+                    'started_at' => now(),
+                    'closed_at' => null,
+                ]);
+
+                DB::table('alerts')->where('id', $alertId)->update(['status' => 'IN_REVIEW']);
+                DB::table('alert_actions')->insert([
+                    'alert_id' => $alertId,
+                    'user_id' => $userId,
+                    'action_type' => 'INVESTIGATION_OPENED',
+                    'comment' => 'Investigation INV-'.$id.' ouverte depuis le dossier d’alerte.',
+                    'created_at' => now(),
+                ]);
+
+                return $id;
+            });
 
             return response()->json([
                 'success' => true,
@@ -370,9 +436,20 @@ public function show($id): JsonResponse
 
             $investigationId = (int) $id;
 
-            $investigation = DB::table('investigations')
-                ->where('id', $investigationId)
-                ->first();
+            $query = DB::table('investigations as i')
+                ->leftJoin('alerts as a', 'a.id', '=', 'i.alert_id')
+                ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
+                ->leftJoin('transactions as t', 't.id', '=', 'a.transaction_id')
+                ->leftJoin('accounts as acc', 'acc.id', '=', 't.account_id')
+                ->select(['i.*'])
+                ->where('i.id', $investigationId);
+            AgencyAccess::constrain(
+                $query,
+                $request,
+                DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+                'acc.account_manager_id'
+            );
+            $investigation = $query->first();
 
             if (!$investigation) {
                 return response()->json([

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -26,9 +28,13 @@ class TransactionMlController extends Controller
      * Aucun calcul ML n'est effectué dans Laravel.
      * La logique reste dans MySQL.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
+
+            if (! AgencyAccess::canAccessTransaction($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Transaction introuvable.'], 404);
+            }
 
             /*
              * ====================================================

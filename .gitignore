@@ -20,6 +20,7 @@ __pycache__/
 *.log
 *.sqlite
 *.sqlite3
+.runtime/
 
 # IDE and operating-system files
 .vscode/

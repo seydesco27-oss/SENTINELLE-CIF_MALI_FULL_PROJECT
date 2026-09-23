@@ -9,7 +9,7 @@
   --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
   padding: 24px 28px 48px;
 }
-.network-page .page-heading { margin-bottom: 18px; }
+.network-page .page-heading { margin-bottom: 16px; }
 .network-page .eyebrow {
   margin: 0 0 6px;
   color: var(--accent-text);
@@ -64,23 +64,16 @@
 }
 
 .network-chain {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  background: #eef2ff;
-  border: 1px solid #dbe1f5;
-  border-radius: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
 }
 .network-chain > div {
-  flex: 1;
-  min-width: 90px;
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 12px 14px;
 }
 .network-chain span {
   display: block;
@@ -94,12 +87,6 @@
   font-size: 16px;
   color: var(--text-primary);
 }
-.network-chain i {
-  align-self: center;
-  font-style: normal;
-  color: #94a3b8;
-  font-weight: 700;
-}
 .network-chain .network-critical {
   border-color: #fecaca;
   background: #fef2f2;
@@ -110,7 +97,7 @@
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px;
+  padding: 0;
   box-shadow: var(--shadow-sm);
   margin-bottom: 16px;
 }
@@ -118,7 +105,7 @@
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 880px;
+  min-width: 720px;
 }
 .data-table th {
   padding: 10px 12px;
@@ -137,6 +124,28 @@
   color: var(--text-secondary);
   white-space: nowrap;
 }
+.data-table td strong + small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+.network-activity,
+.network-vigilance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+}
+.network-activity span,
+.network-vigilance span {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+.network-activity strong,
+.network-vigilance strong {
+  color: var(--text-primary);
+  font: 700 12px "JetBrains Mono", ui-monospace, monospace;
+}
 .data-table td.mono {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   color: var(--text-primary);
@@ -150,9 +159,17 @@
   padding: 32px !important;
 }
 .table-note {
-  margin-top: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--text-tertiary);
+}
+
+@media (max-width: 760px) {
+  .network-chain {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 .text-link {
   border: 0;

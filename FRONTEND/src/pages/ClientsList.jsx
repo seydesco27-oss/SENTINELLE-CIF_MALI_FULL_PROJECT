@@ -53,7 +53,8 @@ function formatAmount(amount) {
 
 export default function ClientsList({ user, onLogout }) {
   const navigate = useNavigate();
-  const canViewCompliance = canAccess(user, "risk_analysis");
+  const canViewCompliance = canAccess(user, "client.view");
+  const canCreateClient = canAccess(user, "client.create");
   const [clients, setClients] = useState([]);
   const [meta, setMeta] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -245,7 +246,7 @@ export default function ClientsList({ user, onLogout }) {
                   : `Clients rattachés à ${user?.agency?.name || "votre agence"}.`}
               </p>
             </div>
-            {canViewCompliance && <button
+            {canCreateClient && <button
               type="button"
               className="cl-new-btn"
               onClick={() => setCreateOpen((v) => !v)}
@@ -254,7 +255,7 @@ export default function ClientsList({ user, onLogout }) {
             </button>}
           </header>
 
-          {canViewCompliance && createOpen && (
+          {canCreateClient && createOpen && (
             <div className="cl-create-panel">
               <div className="cl-create-title">CRÉATION CLIENT — KYC MINIMAL</div>
               {createMsg.text && (

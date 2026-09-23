@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\MlRiskScoringService;
+use App\Support\AccessProfile;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -73,6 +75,8 @@ class AlertController extends Controller
                     'a.title',
                     'a.description',
                     'a.created_at',
+                    DB::raw("(SELECT MAX(ra.score) FROM risk_assessments ra WHERE ra.transaction_id = a.transaction_id AND ra.source <> 'ML_MODEL') AS aml_score"),
+                    DB::raw("(SELECT p.probability FROM predictions p WHERE p.transaction_id = a.transaction_id ORDER BY p.predicted_at DESC, p.id DESC LIMIT 1) AS ml_score"),
 
                     'c.client_number',
                     'c.client_type',
@@ -109,6 +113,13 @@ class AlertController extends Controller
                     'acc.account_number',
                     'acc.account_type',
                 ]);
+
+            AgencyAccess::constrain(
+                $query,
+                $request,
+                DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+                'acc.account_manager_id'
+            );
 
             if ($request->filled('status')) {
                 $query->where(
@@ -187,10 +198,10 @@ class AlertController extends Controller
      *
      * GET /api/v1/alerts/{id}
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
-            $alert = DB::table('alerts as a')
+            $alertQuery = DB::table('alerts as a')
                 ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
                 ->leftJoin(
                     'client_individuals as ci',
@@ -240,6 +251,8 @@ class AlertController extends Controller
                     'a.title',
                     'a.description',
                     'a.created_at',
+                    DB::raw("(SELECT MAX(ra.score) FROM risk_assessments ra WHERE ra.transaction_id = a.transaction_id AND ra.source <> 'ML_MODEL') AS aml_score"),
+                    DB::raw("(SELECT p.probability FROM predictions p WHERE p.transaction_id = a.transaction_id ORDER BY p.predicted_at DESC, p.id DESC LIMIT 1) AS ml_score"),
 
                     'c.client_number',
                     'c.client_type',
@@ -307,8 +320,15 @@ class AlertController extends Controller
                     'ca.name as caisse_name',
                     'ca.city as caisse_city',
                 ])
-                ->where('a.id', $id)
-                ->first();
+                ->where('a.id', $id);
+
+            AgencyAccess::constrain(
+                $alertQuery,
+                $request,
+                DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+                'acc.account_manager_id'
+            );
+            $alert = $alertQuery->first();
 
             if (!$alert) {
                 return response()->json([
@@ -339,7 +359,8 @@ class AlertController extends Controller
             /*
              * Investigations associées.
              */
-            $investigations = DB::table('investigations as i')
+            $investigations = AccessProfile::allows($request->user(), 'investigation.view')
+                ? DB::table('investigations as i')
                 ->leftJoin('users as u', 'u.id', '=', 'i.assigned_user')
                 ->select([
                     'i.id',
@@ -354,7 +375,8 @@ class AlertController extends Controller
                 ])
                 ->where('i.alert_id', $id)
                 ->orderByDesc('i.started_at')
-                ->get();
+                ->get()
+                : collect();
 
             /*
              * Évaluations de risque liées à la transaction.
@@ -410,9 +432,13 @@ class AlertController extends Controller
      *
      * POST /api/v1/alerts/{id}/ml-score
      */
-    public function scoreWithMl(int $id, MlRiskScoringService $scoring): JsonResponse
+    public function scoreWithMl(Request $request, int $id, MlRiskScoringService $scoring): JsonResponse
     {
         try {
+            if (! $this->scopedAlert($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Alerte introuvable.'], 404);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Scoring ML exécuté et enregistré.',
@@ -432,21 +458,13 @@ class AlertController extends Controller
      *
      * GET /api/v1/alerts/{id}/risk
      */
-    public function risk(int $id): JsonResponse
+    public function risk(Request $request, int $id): JsonResponse
     {
         try {
-            $alert = DB::table('alerts')
-                ->select([
-                    'id',
-                    'client_id',
-                    'transaction_id',
-                    'alert_type',
-                    'priority',
-                    'status',
-                    'final_score',
-                ])
-                ->where('id', $id)
-                ->first();
+            $alert = $this->scopedAlert($request, $id, [
+                'a.id', 'a.client_id', 'a.transaction_id', 'a.alert_type',
+                'a.priority', 'a.status', 'a.final_score',
+            ]);
 
             if (!$alert) {
                 return response()->json([
@@ -510,10 +528,10 @@ class AlertController extends Controller
      *
      * GET /api/v1/alerts/{id}/actions
      */
-    public function actions(int $id): JsonResponse
+    public function actions(Request $request, int $id): JsonResponse
     {
         try {
-            if (!DB::table('alerts')->where('id', $id)->exists()) {
+            if (! $this->scopedAlert($request, $id)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Alerte introuvable.',
@@ -556,10 +574,10 @@ class AlertController extends Controller
      *
      * GET /api/v1/alerts/{id}/investigations
      */
-    public function investigations(int $id): JsonResponse
+    public function investigations(Request $request, int $id): JsonResponse
     {
         try {
-            if (!DB::table('alerts')->where('id', $id)->exists()) {
+            if (! $this->scopedAlert($request, $id)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Alerte introuvable.',
@@ -606,12 +624,10 @@ class AlertController extends Controller
      *
      * GET /api/v1/alerts/{id}/client
      */
-    public function client(int $id): JsonResponse
+    public function client(Request $request, int $id): JsonResponse
     {
         try {
-            $alert = DB::table('alerts')
-                ->where('id', $id)
-                ->first();
+            $alert = $this->scopedAlert($request, $id);
 
             if (!$alert) {
                 return response()->json([
@@ -671,12 +687,10 @@ class AlertController extends Controller
      *
      * GET /api/v1/alerts/{id}/transaction
      */
-    public function transaction(int $id): JsonResponse
+    public function transaction(Request $request, int $id): JsonResponse
     {
         try {
-            $alert = DB::table('alerts')
-                ->where('id', $id)
-                ->first();
+            $alert = $this->scopedAlert($request, $id);
 
             if (!$alert) {
                 return response()->json([
@@ -839,6 +853,13 @@ class AlertController extends Controller
                     'acc.account_type',
                 ])
                 ->where('a.status', 'OPEN');
+
+            AgencyAccess::constrain(
+                $query,
+                $request,
+                DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+                'acc.account_manager_id'
+            );
 
             /*
              * ----------------------------------------------------
@@ -1170,6 +1191,13 @@ class AlertController extends Controller
                     );
                 });
 
+            AgencyAccess::constrain(
+                $query,
+                $request,
+                DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+                'acc.account_manager_id'
+            );
+
             /*
              * ----------------------------------------------------
              * STATUT
@@ -1434,7 +1462,7 @@ class AlertController extends Controller
     public function decision(Request $request, int $id): JsonResponse
     {
         try {
-            $alert = DB::table('alerts')->where('id', $id)->first();
+            $alert = $this->scopedAlert($request, $id);
 
             if (!$alert) {
                 return response()->json([
@@ -1506,5 +1534,98 @@ class AlertController extends Controller
         }
     }
 
+    /**
+     * Escalade une alerte vers la file de conformité.
+     *
+     * L'action reste distincte d'une décision finale : elle place l'alerte
+     * en analyse et conserve le motif dans le journal d'audit métier.
+     */
+    public function escalate(Request $request, int $id): JsonResponse
+    {
+        try {
+            $alert = $this->scopedAlert($request, $id);
 
+            if (!$alert) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Alerte introuvable.',
+                ], 404);
+            }
+
+            if (in_array(strtoupper((string) $alert->status), ['CLOSED', 'DISMISSED', 'RESOLVED'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cette alerte est déjà clôturée.',
+                ], 409);
+            }
+
+            if (strtoupper((string) $alert->status) === 'IN_REVIEW') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cette alerte est déjà en cours d’analyse.',
+                ], 409);
+            }
+
+            $comment = trim((string) $request->input('comment'));
+
+            if (mb_strlen($comment) < 10) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Motif obligatoire.',
+                    'error' => 'comment doit contenir au moins 10 caractères.',
+                ], 422);
+            }
+
+            $userId = $request->user()->id;
+
+            DB::transaction(function () use ($id, $comment, $userId) {
+                DB::table('alerts')
+                    ->where('id', $id)
+                    ->update(['status' => 'IN_REVIEW']);
+
+                DB::table('alert_actions')->insert([
+                    'alert_id' => $id,
+                    'user_id' => $userId,
+                    'action_type' => 'ESCALATED_TO_COMPLIANCE',
+                    'comment' => $comment,
+                    'created_at' => now(),
+                ]);
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'alert_id' => $id,
+                    'status' => 'IN_REVIEW',
+                    'escalated_by' => $userId,
+                    'escalated_at' => now()->toIso8601String(),
+                ],
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de l’escalade de l’alerte.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function scopedAlert(Request $request, int $id, array $columns = ['a.*']): ?object
+    {
+        $query = DB::table('alerts as a')
+            ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
+            ->leftJoin('transactions as t', 't.id', '=', 'a.transaction_id')
+            ->leftJoin('accounts as acc', 'acc.id', '=', 't.account_id')
+            ->select($columns)
+            ->where('a.id', $id);
+
+        AgencyAccess::constrain(
+            $query,
+            $request,
+            DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+            'acc.account_manager_id'
+        );
+
+        return $query->first();
+    }
 }

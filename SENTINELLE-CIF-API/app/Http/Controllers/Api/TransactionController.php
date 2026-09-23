@@ -124,7 +124,7 @@ class TransactionController extends Controller
                     't.reversal_of_transaction_id',
                     't.created_at',
                 ]);
-            AgencyAccess::constrain($query, $request, 't.agency_id');
+            AgencyAccess::constrain($query, $request, 't.agency_id', 'a.account_manager_id');
 
 
             /*
@@ -273,12 +273,6 @@ class TransactionController extends Controller
                 ->limit($limit)
                 ->get();
 
-            if (AgencyAccess::restrictedAgencyId($request) !== null) {
-                $transactions->each(function ($transaction): void {
-                    unset($transaction->is_pep, $transaction->risk_score);
-                });
-            }
-
 
             return response()->json([
                 'success' => true,
@@ -324,11 +318,7 @@ class TransactionController extends Controller
     public function show(Request $request, int $id): JsonResponse
     {
         try {
-            $restrictedAgencyId = AgencyAccess::restrictedAgencyId($request);
-            if ($restrictedAgencyId !== null && ! DB::table('transactions')
-                ->where('id', $id)
-                ->where('agency_id', $restrictedAgencyId)
-                ->exists()) {
+            if (! AgencyAccess::canAccessTransaction($request, $id)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Transaction introuvable.',
@@ -340,11 +330,9 @@ class TransactionController extends Controller
              * TRANSACTION + FEATURES AML / ML
              * ====================================================
              */
-            $transaction = $restrictedAgencyId === null
-                ? DB::table('v_ml_transaction_features')
-                    ->where('transaction_id', $id)
-                    ->first()
-                : null;
+            $transaction = DB::table('v_ml_transaction_features')
+                ->where('transaction_id', $id)
+                ->first();
 
 
             /*
@@ -417,20 +405,6 @@ class TransactionController extends Controller
                         $id
                     )
                     ->first();
-            }
-
-            if ($restrictedAgencyId !== null) {
-                return response()->json([
-                    'success' => true,
-                    'data' => [
-                        'transaction' => $transaction,
-                        'aml' => null,
-                        'alerts' => [],
-                        'risk_assessments' => [],
-                        'rule_executions' => [],
-                        'ml_label' => null,
-                    ],
-                ]);
             }
 
 
@@ -663,13 +637,11 @@ class TransactionController extends Controller
      *
      * GET /api/v1/transactions/{id}/risk
      */
-    public function risk(int $id): JsonResponse
+    public function risk(Request $request, int $id): JsonResponse
     {
         try {
 
-            $exists = DB::table('transactions')
-                ->where('id', $id)
-                ->exists();
+            $exists = AgencyAccess::canAccessTransaction($request, $id);
 
             if (!$exists) {
 
@@ -777,14 +749,11 @@ class TransactionController extends Controller
      *
      * GET /api/v1/transactions/{id}/alerts
      */
-    public function alerts(int $id): JsonResponse
+    public function alerts(Request $request, int $id): JsonResponse
     {
         try {
 
-            if (!DB::table('transactions')
-                ->where('id', $id)
-                ->exists()
-            ) {
+            if (! AgencyAccess::canAccessTransaction($request, $id)) {
 
                 return response()->json([
                     'success' => false,
@@ -865,9 +834,13 @@ class TransactionController extends Controller
             );
 
 
-            $query = DB::table(
-                'v_suspicious_transactions'
-            );
+            $query = DB::table('v_suspicious_transactions as vst')
+                ->join('transactions as t', 't.id', '=', 'vst.transaction_id')
+                ->leftJoin('accounts as a', 'a.id', '=', 't.account_id')
+                ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
+                ->select(['vst.*']);
+
+            AgencyAccess::constrain($query, $request, 't.agency_id', 'a.account_manager_id');
 
 
             /*
@@ -892,7 +865,7 @@ class TransactionController extends Controller
             if ($request->filled('min_score')) {
 
                 $query->where(
-                    'aml_risk_score',
+                    'vst.aml_risk_score',
                     '>=',
                     (float) $request->query('min_score')
                 );
@@ -907,7 +880,7 @@ class TransactionController extends Controller
             if ($request->boolean('pep_only')) {
 
                 $query->where(
-                    'pep_indicator',
+                    'vst.pep_indicator',
                     1
                 );
             }
@@ -921,7 +894,7 @@ class TransactionController extends Controller
             if ($request->boolean('sanctions_only')) {
 
                 $query->where(
-                    'sanctions_match_indicator',
+                    'vst.sanctions_match_indicator',
                     1
                 );
             }
@@ -941,31 +914,31 @@ class TransactionController extends Controller
                 $query->where(function ($q) use ($search) {
 
                     $q->where(
-                        'transaction_reference',
+                        'vst.transaction_reference',
                         'LIKE',
                         "%{$search}%"
                     )
 
                     ->orWhere(
-                        'client_number',
+                        'vst.client_number',
                         'LIKE',
                         "%{$search}%"
                     )
 
                     ->orWhere(
-                        'country',
+                        'vst.country',
                         'LIKE',
                         "%{$search}%"
                     )
 
                     ->orWhere(
-                        'country_from',
+                        'vst.country_from',
                         'LIKE',
                         "%{$search}%"
                     )
 
                     ->orWhere(
-                        'country_to',
+                        'vst.country_to',
                         'LIKE',
                         "%{$search}%"
                     );
@@ -979,10 +952,10 @@ class TransactionController extends Controller
              * ====================================================
              */
             $transactions = $query
-                ->orderByDesc('aml_risk_score')
-                ->orderByDesc('sanctions_match_score')
-                ->orderByDesc('screening_score')
-                ->orderByDesc('transaction_date')
+                ->orderByDesc('vst.aml_risk_score')
+                ->orderByDesc('vst.sanctions_match_score')
+                ->orderByDesc('vst.screening_score')
+                ->orderByDesc('vst.transaction_date')
                 ->limit($limit)
                 ->get();
 
@@ -1061,7 +1034,7 @@ class TransactionController extends Controller
         try {
             $accountId = (int) $request->input('account_id');
 
-            if ($accountId <= 0 || !DB::table('accounts')->where('id', $accountId)->exists()) {
+            if ($accountId <= 0 || ! AgencyAccess::canAccessAccount($request, $accountId)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Compte invalide.',
@@ -1071,7 +1044,7 @@ class TransactionController extends Controller
 
             $agencyId = $request->filled('agency_id') ? (int) $request->input('agency_id') : null;
             if ($agencyId !== null && $agencyId > 0) {
-                if (!DB::table('agencies')->where('id', $agencyId)->exists()) {
+                if (! AgencyAccess::canAccessAgency($request, $agencyId)) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Agence invalide.',

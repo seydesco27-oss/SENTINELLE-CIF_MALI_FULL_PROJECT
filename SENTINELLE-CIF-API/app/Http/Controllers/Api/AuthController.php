@@ -43,7 +43,7 @@ class AuthController extends Controller
             ->where('username', $validated['username'])
             ->first();
 
-        if (!$user || !Hash::check(
+        if (!$user || ! $user->is_active || !Hash::check(
             $validated['password'],
             $user->password_hash
         )) {
@@ -118,6 +118,10 @@ class AuthController extends Controller
         return [
             'id' => $user->id,
             'username' => $user->username,
+            'agency_id' => $user->agency_id,
+            'caisse_id' => $user->caisse_id,
+            'role_id' => $user->role_id,
+            'scope_level' => $user->scope_level,
             'first_name' => $profile['first_name'],
             'last_name' => $profile['last_name'],
             'full_name' => $profile['full_name'],

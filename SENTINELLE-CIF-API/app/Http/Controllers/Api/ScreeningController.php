@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -58,6 +59,8 @@ class ScreeningController extends Controller
                     DB::raw('(SELECT COUNT(*) FROM pep_matches pm WHERE pm.client_id = c.id) as pep_match_count'),
                     DB::raw('(SELECT COUNT(*) FROM sanction_matches sm WHERE sm.client_id = c.id) as sanction_match_count'),
                 ]);
+
+            AgencyAccess::constrain($query, $request, 'c.agency_id');
 
             if ($request->filled('status')) {
                 $query->where('s.status', strtoupper($request->query('status')));

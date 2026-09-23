@@ -32,7 +32,10 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'agency_id',
+        'caisse_id',
         'role_id',
+        'scope_level',
+        'is_active',
         'username',
         'first_name',
         'last_name',
@@ -62,9 +65,11 @@ class User extends Authenticatable
         return [
             'id' => 'integer',
             'agency_id' => 'integer',
+            'caisse_id' => 'integer',
             'role_id' => 'integer',
             'created_at' => 'datetime',
             'profile_updated_at' => 'datetime',
+            'is_active' => 'boolean',
         ];
     }
 
@@ -114,6 +119,15 @@ class User extends Authenticatable
         return $this->belongsTo(
             Role::class,
             'role_id',
+            'id'
+        );
+    }
+
+    public function caisse()
+    {
+        return $this->belongsTo(
+            Caisse::class,
+            'caisse_id',
             'id'
         );
     }

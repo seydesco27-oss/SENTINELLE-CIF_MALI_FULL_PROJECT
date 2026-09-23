@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -49,6 +50,8 @@ class AuditController extends Controller
                     'al.hash_previous',
                     'al.hash_current',
                 ]);
+
+            AgencyAccess::constrain($query, $request, 'u.agency_id');
 
             if ($request->filled('user_id')) {
                 $query->where(
@@ -121,10 +124,10 @@ class AuditController extends Controller
      *
      * GET /api/v1/audit/{id}
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
-            $log = DB::table('audit_logs as al')
+            $query = DB::table('audit_logs as al')
                 ->leftJoin('users as u', 'u.id', '=', 'al.user_id')
                 ->select([
                     'al.id',
@@ -141,8 +144,10 @@ class AuditController extends Controller
                     'al.hash_previous',
                     'al.hash_current',
                 ])
-                ->where('al.id', $id)
-                ->first();
+                ->where('al.id', $id);
+
+            AgencyAccess::constrain($query, $request, 'u.agency_id');
+            $log = $query->first();
 
             if (!$log) {
                 return response()->json([
@@ -166,4 +171,3 @@ class AuditController extends Controller
         }
     }
 }
-

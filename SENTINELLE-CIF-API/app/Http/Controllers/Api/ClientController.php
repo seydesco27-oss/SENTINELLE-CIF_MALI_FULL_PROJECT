@@ -134,17 +134,6 @@ class ClientController extends Controller
                 $item->transaction_count = (int) ($transactionCounts[$item->client_id] ?? 0);
             }
 
-            if (AgencyAccess::restrictedAgencyId($request) !== null) {
-                foreach ($items as $item) {
-                    unset(
-                        $item->is_pep,
-                        $item->risk_level,
-                        $item->risk_score,
-                        $item->alert_count
-                    );
-                }
-            }
-
             return response()->json([
                 'success' => true,
                 'message' => 'Clients récupérés avec succès.',
@@ -230,14 +219,11 @@ class ClientController extends Controller
             /*
              * Alertes du client
              */
-            $isRestrictedAgent = AgencyAccess::restrictedAgencyId($request) !== null;
-            $alerts = $isRestrictedAgent
-                ? collect()
-                : DB::table('alerts')
-                    ->where('client_id', $id)
-                    ->orderByDesc('created_at')
-                    ->limit(100)
-                    ->get();
+            $alerts = DB::table('alerts')
+                ->where('client_id', $id)
+                ->orderByDesc('created_at')
+                ->limit(100)
+                ->get();
 
 
             /*
@@ -268,20 +254,9 @@ class ClientController extends Controller
             /*
              * Score AML détaillé
              */
-            $riskScore = $isRestrictedAgent
-                ? null
-                : DB::table('risk_scores')
-                    ->where('client_id', $id)
-                    ->first();
-
-            if ($isRestrictedAgent) {
-                unset(
-                    $profile->is_pep,
-                    $profile->risk_level,
-                    $profile->risk_score,
-                    $profile->alert_count
-                );
-            }
+            $riskScore = DB::table('risk_scores')
+                ->where('client_id', $id)
+                ->first();
 
 
             /*
@@ -337,6 +312,10 @@ class ClientController extends Controller
     public function updateStatus(Request $request, int $id): JsonResponse
     {
         try {
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
+
             $client = DB::table('clients')->where('id', $id)->first();
 
             if (!$client) {
@@ -460,7 +439,7 @@ class ClientController extends Controller
 
             $agencyId = (int) $request->input('agency_id');
 
-            if ($agencyId <= 0 || !DB::table('agencies')->where('id', $agencyId)->exists()) {
+            if ($agencyId <= 0 || ! AgencyAccess::canAccessAgency($request, $agencyId)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Agence invalide.',
@@ -697,6 +676,10 @@ class ClientController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         try {
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
+
             $client = DB::table('clients')->where('id', $id)->first();
 
             if (!$client) {
@@ -785,6 +768,10 @@ class ClientController extends Controller
     public function report(Request $request, int $id): JsonResponse
     {
         try {
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
+
             $client = DB::table('clients')->where('id', $id)->first();
 
             if (!$client) {

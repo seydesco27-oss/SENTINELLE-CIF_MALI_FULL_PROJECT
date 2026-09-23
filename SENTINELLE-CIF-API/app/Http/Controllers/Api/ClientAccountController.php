@@ -14,10 +14,7 @@ class ClientAccountController extends Controller
     public function index(Request $request, int $id): JsonResponse
     {
         try {
-            $clientQuery = DB::table('clients')->where('id', $id);
-            AgencyAccess::constrain($clientQuery, $request, 'agency_id');
-            $client = $clientQuery->first();
-            if (!$client) {
+            if (! AgencyAccess::canAccessClient($request, $id)) {
                 return response()->json(['success' => false, 'message' => 'Client introuvable.', 'client_id' => $id], 404);
             }
 

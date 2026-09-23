@@ -102,7 +102,7 @@ export default function NetworkOverview({ user, onLogout }) {
     <div className="app-shell">
       <Sidebar user={user} onLogout={onLogout} />
       <div className="app-main">
-        <DemoRail />
+        <DemoRail user={user} />
 
         <section className="page-frame network-page">
           <header className="page-heading">
@@ -162,29 +162,21 @@ export default function NetworkOverview({ user, onLogout }) {
 
           <div className="network-chain">
             <div>
-              <span>RÉSEAU</span>
-              <strong>CIF</strong>
-            </div>
-            <i>→</i>
-            <div>
               <span>CAISSES</span>
               <strong>
                 {summary.caisse_count ?? caisses.length ?? "—"}
               </strong>
             </div>
-            <i>→</i>
             <div>
               <span>AGENCES</span>
               <strong>
                 {summary.agency_count ?? filtered.length ?? "—"}
               </strong>
             </div>
-            <i>→</i>
             <div>
               <span>ALERTES</span>
               <strong>{totalAlerts}</strong>
             </div>
-            <i>→</i>
             <div className="network-critical">
               <span>CRITIQUES</span>
               <strong>{totalCritical}</strong>
@@ -199,20 +191,17 @@ export default function NetworkOverview({ user, onLogout }) {
                 <table className="data-table network-table">
                   <thead>
                     <tr>
-                      <th>CAISSE</th>
-                      <th>AGENCE</th>
-                      <th>CLIENTS</th>
-                      <th>TRANSACTIONS</th>
+                      <th>POINT D’OPÉRATION</th>
+                      <th>ACTIVITÉ</th>
                       <th>VOLUME</th>
-                      <th>ALERTES</th>
-                      <th>CRITIQUES</th>
+                      <th>VIGILANCE</th>
                       <th>ACCÈS</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.length === 0 ? (
                       <tr>
-                        <td className="empty-cell" colSpan={8}>
+                        <td className="empty-cell" colSpan={5}>
                           Aucune agence dans ce périmètre.
                         </td>
                       </tr>
@@ -223,28 +212,20 @@ export default function NetworkOverview({ user, onLogout }) {
                             <strong>
                               {a.caisse_name || a.caisse_code || "—"}
                             </strong>
+                            <small>{a.name || a.code || "—"}</small>
                           </td>
-                          <td>{a.name || a.code || "—"}</td>
-                          <td className="mono">
-                            {a.client_count != null ? a.client_count : "—"}
-                          </td>
-                          <td className="mono">
-                            {a.transaction_count != null
-                              ? a.transaction_count
-                              : "—"}
+                          <td className="network-activity">
+                            <span><strong>{a.client_count != null ? a.client_count : "—"}</strong> clients</span>
+                            <span><strong>{a.transaction_count != null ? a.transaction_count : "—"}</strong> opérations</span>
                           </td>
                           <td className="mono">
                             {formatAmount(
                               a.volume ?? a.total_volume ?? a.transaction_volume
                             )}
                           </td>
-                          <td className="mono">
-                            {a.alert_count != null ? a.alert_count : "—"}
-                          </td>
-                          <td className="mono network-critical-text">
-                            {a.critical_alert_count != null
-                              ? a.critical_alert_count
-                              : "—"}
+                          <td className="network-vigilance">
+                            <span><strong>{a.alert_count != null ? a.alert_count : "—"}</strong> alertes</span>
+                            <span className="network-critical-text"><strong>{a.critical_alert_count != null ? a.critical_alert_count : "—"}</strong> critiques</span>
                           </td>
                           <td>
                             <button
@@ -263,8 +244,7 @@ export default function NetworkOverview({ user, onLogout }) {
               </div>
             )}
             <footer className="table-note">
-              L’activité est rattachée au point d’opération ; les clients restent
-              rattachés à leur agence d’origine. Source API : /network
+              Les chiffres respectent le périmètre organisationnel de la session.
             </footer>
           </article>
 

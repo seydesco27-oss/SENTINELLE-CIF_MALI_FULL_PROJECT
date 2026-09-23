@@ -1,0 +1,36 @@
+.admin-users-page { max-width: 1320px; margin: 0 auto; padding: 24px 28px 48px; color: #0f172a; }
+.admin-users-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 18px; }
+.admin-users-heading p { margin: 0 0 6px; color: #1e40af; font: 700 10px "JetBrains Mono", monospace; letter-spacing: .12em; }
+.admin-users-heading h1 { margin: 0; font-size: 27px; letter-spacing: -.035em; }
+.admin-users-heading span { display: block; margin-top: 7px; color: #64748b; font-size: 13px; }
+.admin-users-heading button, .admin-user-form-actions .primary { height: 34px; padding: 0 13px; border: 1px solid #1d4ed8; border-radius: 5px; background: #1d4ed8; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }
+.admin-users-message { margin-bottom: 12px; padding: 10px 12px; border-radius: 6px; font-size: 12px; }
+.admin-users-message.is-error { border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; }
+.admin-users-message.is-success { border: 1px solid #bbf7d0; background: #f0fdf4; color: #166534; }
+.admin-user-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; padding: 16px; border: 1px solid #bfdbfe; border-radius: 9px; background: #f8fbff; }
+.admin-user-form-title { grid-column: 1 / -1; display: flex; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid #dbeafe; }
+.admin-user-form-title span { color: #64748b; font-size: 11px; }
+.admin-user-form label { display: grid; gap: 4px; }
+.admin-user-form label > span { color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.admin-user-form input, .admin-user-form select, .admin-users-toolbar input { height: 34px; padding: 0 9px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; font-size: 12px; }
+.admin-user-form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+.admin-user-form-actions button { height: 34px; padding: 0 13px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; cursor: pointer; }
+.admin-users-panel { overflow: hidden; border: 1px solid #e2e8f0; border-radius: 9px; background: #fff; }
+.admin-users-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
+.admin-users-toolbar strong { font-size: 13px; }
+.admin-users-toolbar input { width: 260px; }
+.admin-users-table-wrap { overflow-x: auto; }
+.admin-users-panel table { width: 100%; min-width: 850px; border-collapse: collapse; }
+.admin-users-panel th { padding: 10px 13px; text-align: left; border-bottom: 1px solid #e2e8f0; background: #f8fafc; color: #94a3b8; font: 700 9px "JetBrains Mono", monospace; letter-spacing: .07em; }
+.admin-users-panel td { padding: 11px 13px; border-bottom: 1px solid #eef2f7; color: #475569; font-size: 12px; }
+.admin-users-panel td strong { display: block; color: #0f172a; }
+.admin-users-panel td small { display: block; margin-top: 3px; color: #94a3b8; font-size: 10px; }
+.scope-chip, .user-status { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: 9px; font-weight: 750; }
+.scope-chip { background: #eff6ff; color: #1d4ed8; }
+.user-status.is-active { background: #f0fdf4; color: #15803d; }
+.user-status.is-inactive { background: #f1f5f9; color: #64748b; }
+.admin-user-toggle { border: 0; background: transparent; color: #1d4ed8; font-size: 11px; font-weight: 650; cursor: pointer; }
+.admin-user-toggle:disabled { color: #cbd5e1; cursor: not-allowed; }
+.admin-users-empty { padding: 28px; color: #94a3b8; font-size: 12px; text-align: center; }
+@media (max-width: 950px) { .admin-user-form { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .admin-users-page { padding: 18px 14px 40px; } .admin-user-form { grid-template-columns: 1fr; } .admin-users-heading { flex-direction: column; } }

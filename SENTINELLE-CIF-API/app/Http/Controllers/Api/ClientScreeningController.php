@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,9 +25,12 @@ class ClientScreeningController extends Controller
      * - screening_lists
      * - sanction_matches
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
 
             /*
              * ----------------------------------------------------
@@ -194,6 +198,9 @@ class ClientScreeningController extends Controller
     public function run(Request $request, int $id): JsonResponse
     {
         try {
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
 
             /*
              * ----------------------------------------------------
@@ -407,9 +414,13 @@ class ClientScreeningController extends Controller
      *
      * GET /api/v1/clients/{id}/sanctions
      */
-    public function sanctions(int $id): JsonResponse
+    public function sanctions(Request $request, int $id): JsonResponse
     {
         try {
+
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
 
             if (!DB::table('clients')->where('id', $id)->exists()) {
                 return response()->json([
@@ -499,9 +510,13 @@ class ClientScreeningController extends Controller
      * clients.is_pep
      * pep_matches
      */
-    public function pep(int $id): JsonResponse
+    public function pep(Request $request, int $id): JsonResponse
     {
         try {
+
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
 
             $client = DB::table('clients')
                 ->select([

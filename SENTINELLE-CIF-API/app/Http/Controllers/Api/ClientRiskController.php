@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -16,9 +18,13 @@ class ClientRiskController extends Controller
      *
      * GET /api/v1/clients/{id}/risk
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
+
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
 
             /*
              * ----------------------------------------------------

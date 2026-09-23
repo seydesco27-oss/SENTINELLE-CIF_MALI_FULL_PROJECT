@@ -40,7 +40,7 @@ class AccountController extends Controller
                     DB::raw("(SELECT COALESCE(SUM(t.amount),0) FROM transactions t WHERE t.account_id = a.id AND UPPER(COALESCE(t.transaction_status,'COMPLETED')) NOT IN ('CANCELLED','CANCELED','REVERSED','VOID')) AS transaction_volume"),
                     DB::raw('(SELECT COUNT(*) FROM alerts al WHERE al.client_id = a.client_id) AS alert_count'),
                 ]);
-            AgencyAccess::constrain($query, $request, 'c.agency_id');
+            AgencyAccess::constrain($query, $request, 'c.agency_id', 'a.account_manager_id');
 
             if ($request->filled('status')) $query->where('a.status', strtoupper(trim($request->query('status'))));
             if ($request->filled('account_type')) $query->where('a.account_type', $request->query('account_type'));
@@ -63,16 +63,6 @@ class AccountController extends Controller
             }
 
             $accounts = $query->orderByDesc('a.id')->limit($limit)->get();
-            if (AgencyAccess::restrictedAgencyId($request) !== null) {
-                $accounts->each(function ($account): void {
-                    unset(
-                        $account->is_pep,
-                        $account->risk_score,
-                        $account->risk_level,
-                        $account->alert_count
-                    );
-                });
-            }
 
             return response()->json(['success' => true, 'count' => $accounts->count(), 'data' => $accounts]);
         } catch (Throwable $e) {
@@ -106,7 +96,7 @@ class AccountController extends Controller
                     'ce.legal_name', 'ce.entity_type', 'ce.nationality as entity_nationality', 'ce.activity_sector as entity_activity_sector',
                 ])
                 ->where('a.id', $id);
-            AgencyAccess::constrain($accountQuery, $request, 'c.agency_id');
+            AgencyAccess::constrain($accountQuery, $request, 'c.agency_id', 'a.account_manager_id');
             $account = $accountQuery->first();
 
             if (!$account) {
@@ -123,16 +113,6 @@ class AccountController extends Controller
             $riskAssessmentCount = DB::table('risk_assessments as ra')
                 ->join('transactions as t', 't.id', '=', 'ra.transaction_id')
                 ->where('t.account_id', $id)->count();
-
-            $isRestrictedAgent = AgencyAccess::restrictedAgencyId($request) !== null;
-            if ($isRestrictedAgent) {
-                unset(
-                    $account->is_pep,
-                    $account->risk_score,
-                    $account->risk_level,
-                    $account->risk_level_label
-                );
-            }
 
             return response()->json([
                 'success' => true,
@@ -153,8 +133,8 @@ class AccountController extends Controller
                         'transaction_count' => (int) ($statistics->transaction_count ?? 0),
                         'transaction_volume' => $statistics->transaction_volume ?? 0,
                         'average_transaction_amount' => $statistics->average_transaction_amount ?? 0,
-                        'alert_count' => $isRestrictedAgent ? null : $alertCount,
-                        'risk_assessment_count' => $isRestrictedAgent ? null : $riskAssessmentCount,
+                        'alert_count' => $alertCount,
+                        'risk_assessment_count' => $riskAssessmentCount,
                     ],
                 ],
             ]);
@@ -172,6 +152,9 @@ class AccountController extends Controller
             if ($clientId <= 0) {
                 return response()->json(['success' => false, 'message' => 'client_id obligatoire.'], 422);
             }
+            if (! AgencyAccess::canAccessClient($request, $clientId)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
             if ($accountNumber === '') {
                 return response()->json(['success' => false, 'message' => 'account_number obligatoire.'], 422);
             }
@@ -182,7 +165,9 @@ class AccountController extends Controller
             $managerId = $request->filled('account_manager_id') ? (int) $request->input('account_manager_id') : null;
 
             if ($managerId !== null && $managerId > 0) {
-                if (!DB::table('users')->where('id', $managerId)->exists()) {
+                $managerQuery = DB::table('users')->where('id', $managerId);
+                AgencyAccess::constrain($managerQuery, $request, 'agency_id');
+                if (! $managerQuery->exists()) {
                     return response()->json(['success' => false, 'message' => 'account_manager_id introuvable.'], 422);
                 }
             } else {
@@ -233,6 +218,8 @@ class AccountController extends Controller
                     'ag.code as agency_code', 'ag.name as agency_name', 'r.name as role',
                 ])
                 ->orderBy('u.username');
+
+            AgencyAccess::constrain($query, $request, 'u.agency_id');
 
             if ($request->filled('agency_id')) {
                 $query->where('u.agency_id', (int) $request->query('agency_id'));

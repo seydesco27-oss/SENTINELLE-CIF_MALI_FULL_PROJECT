@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -22,9 +24,13 @@ class TransactionAmlController extends Controller
      *
      * Cette procédure est le moteur AML transactionnel interactif.
      */
-    public function evaluate(int $id): JsonResponse
+    public function evaluate(Request $request, int $id): JsonResponse
     {
         try {
+
+            if (! AgencyAccess::canAccessTransaction($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Transaction introuvable.'], 404);
+            }
 
             /*
              * Vérification préalable de l'existence.
@@ -129,9 +135,13 @@ class TransactionAmlController extends Controller
      *
      * La logique de calcul reste dans SQL.
      */
-    public function analysis(int $id): JsonResponse
+    public function analysis(Request $request, int $id): JsonResponse
     {
         try {
+
+            if (! AgencyAccess::canAccessTransaction($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Transaction introuvable.'], 404);
+            }
 
             /*
              * ----------------------------------------------------

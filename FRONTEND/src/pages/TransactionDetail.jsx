@@ -121,7 +121,7 @@ export default function TransactionDetail({ user, onLogout }) {
   const [payload, setPayload] = useState(null);
   const [decision, setDecision] = useState("");
   const [comment, setComment] = useState("");
-  const canViewAnalysis = canAccess(user, "risk_analysis");
+  const canViewAnalysis = canAccess(user, "tx.view");
 
   useEffect(() => {
     let cancelled = false;

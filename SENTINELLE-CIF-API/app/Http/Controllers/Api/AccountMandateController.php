@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -15,9 +17,13 @@ class AccountMandateController extends Controller
     /**
      * GET /accounts/{id}/mandates
      */
-    public function index(int $id): JsonResponse
+    public function index(Request $request, int $id): JsonResponse
     {
         try {
+            if (! AgencyAccess::canAccessAccount($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Compte introuvable.'], 404);
+            }
+
             $account = DB::table('accounts')->where('id', $id)->first();
             if (!$account) {
                 return response()->json([

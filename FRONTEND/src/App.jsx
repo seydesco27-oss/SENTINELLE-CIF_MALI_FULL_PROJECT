@@ -18,6 +18,7 @@ import Analyse from "./pages/Analyse";
 import Rapports from "./pages/Rapports";
 import Parametres from "./pages/Parametres";
 import CentifDeclarations from "./pages/CentifDeclarations";
+import AdminUsers from "./pages/AdminUsers";
 import {
   isAuthenticated,
   getStoredUser,
@@ -82,25 +83,26 @@ function App() {
         />
         <Route path="/login" element={<Login />} />
 
-        <Route path="/dashboard" element={<ProtectedPage user={user} permission="dashboard"><Dashboard user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/alertes" element={<ProtectedPage user={user} permission="alerts"><AlertsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/alertes/:id" element={<ProtectedPage user={user} permission="alerts"><AlertDetail user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/transactions" element={<ProtectedPage user={user} permission="transactions"><TransactionsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/transactions/:id" element={<ProtectedPage user={user} permission="transactions"><TransactionDetail user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/clients" element={<ProtectedPage user={user} permission="clients"><ClientsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/clients/:id" element={<ProtectedPage user={user} permission="clients"><ClientDetail user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/screening" element={<ProtectedPage user={user} permission="screening"><Screening user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/ml" element={<ProtectedPage user={user} permission="ml"><MlAssistance user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/audit" element={<ProtectedPage user={user} permission="audit"><AuditLog user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/comptes" element={<ProtectedPage user={user} permission="accounts"><AccountsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/agences" element={<ProtectedPage user={user} permission="network"><NetworkOverview user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/reseau" element={<ProtectedPage user={user} permission="network"><NetworkOverview user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/investigations" element={<ProtectedPage user={user} permission="investigations"><InvestigationsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/centif" element={<ProtectedPage user={user} permission="centif"><CentifDeclarations user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/analyse" element={<ProtectedPage user={user} permission="risk_analysis"><Analyse user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/analyse-risque" element={<ProtectedPage user={user} permission="risk_analysis"><Analyse user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/rapports" element={<ProtectedPage user={user} permission="reports"><Rapports user={user} onLogout={handleLogout} /></ProtectedPage>} />
-        <Route path="/parametres" element={<ProtectedPage user={user} permission="settings"><Parametres user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/dashboard" element={<ProtectedPage user={user} permission="nav.dashboard"><Dashboard user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/alertes" element={<ProtectedPage user={user} permission="nav.alerts"><AlertsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/alertes/:id" element={<ProtectedPage user={user} permission="alert.view"><AlertDetail user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/transactions" element={<ProtectedPage user={user} permission="nav.transactions"><TransactionsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/transactions/:id" element={<ProtectedPage user={user} permission="tx.view"><TransactionDetail user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/clients" element={<ProtectedPage user={user} permission="nav.clients"><ClientsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/clients/:id" element={<ProtectedPage user={user} permission="client.view"><ClientDetail user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/screening" element={<ProtectedPage user={user} permission="nav.screening"><Screening user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/ml" element={<ProtectedPage user={user} permission="nav.ml"><MlAssistance user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/audit" element={<ProtectedPage user={user} permission="nav.audit"><AuditLog user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/comptes" element={<ProtectedPage user={user} permission="nav.accounts"><AccountsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/agences" element={<ProtectedPage user={user} permission="nav.network"><NetworkOverview user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/reseau" element={<ProtectedPage user={user} permission="nav.network"><NetworkOverview user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/investigations" element={<ProtectedPage user={user} permission="nav.investigations"><InvestigationsList user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/centif" element={<ProtectedPage user={user} permission="nav.centif"><CentifDeclarations user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/analyse" element={<ProtectedPage user={user} permission="nav.analyse"><Analyse user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/analyse-risque" element={<ProtectedPage user={user} permission="nav.analyse"><Analyse user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/rapports" element={<ProtectedPage user={user} permission="nav.reports"><Rapports user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/parametres" element={<ProtectedPage user={user} permission="nav.settings"><Parametres user={user} onLogout={handleLogout} /></ProtectedPage>} />
+        <Route path="/admin/utilisateurs" element={<ProtectedPage user={user} permission="nav.users"><AdminUsers user={user} onLogout={handleLogout} /></ProtectedPage>} />
 
         {/* M5 : authentifié → dashboard ; sinon → login */}
         <Route

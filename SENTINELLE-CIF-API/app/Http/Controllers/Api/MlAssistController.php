@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\GroqChatClient;
+use App\Support\AgencyAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,13 +17,20 @@ use Throwable;
  */
 class MlAssistController extends Controller
 {
+    private ?Request $activeRequest = null;
+
     /**
      * GET /api/ml/assist/alert/{id}
      * Contexte brut d'une alerte pour le panneau Assist.
      */
-    public function alertContext(int $id): JsonResponse
+    public function alertContext(Request $request, int $id): JsonResponse
     {
         try {
+            $this->activeRequest = $request;
+            if (! AgencyAccess::canAccessAlert($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Alerte introuvable.'], 404);
+            }
+
             $row = DB::table('v_assist_alert_context')
                 ->where('alert_id', $id)
                 ->first();
@@ -55,9 +63,14 @@ class MlAssistController extends Controller
     /**
      * GET /api/ml/assist/client/{id}
      */
-    public function clientContext(int $id): JsonResponse
+    public function clientContext(Request $request, int $id): JsonResponse
     {
         try {
+            $this->activeRequest = $request;
+            if (! AgencyAccess::canAccessClient($request, $id)) {
+                return response()->json(['success' => false, 'message' => 'Client introuvable.'], 404);
+            }
+
             $row = DB::table('v_assist_client_context')
                 ->where('client_id', $id)
                 ->first();
@@ -90,6 +103,7 @@ class MlAssistController extends Controller
     public function assist(Request $request): JsonResponse
     {
         try {
+            $this->activeRequest = $request;
             $type = strtolower((string) $request->input('object_type', 'alert'));
             $id = (int) $request->input('object_id');
             $action = strtolower((string) $request->input('action', 'summarize'));
@@ -99,6 +113,13 @@ class MlAssistController extends Controller
                     'success' => false,
                     'message' => 'object_type (alert|client) et object_id requis.',
                 ], 422);
+            }
+
+            $authorized = $type === 'alert'
+                ? AgencyAccess::canAccessAlert($request, $id)
+                : AgencyAccess::canAccessClient($request, $id);
+            if (! $authorized) {
+                return response()->json(['success' => false, 'message' => 'Dossier introuvable.'], 404);
             }
 
             if ($type === 'alert') {
@@ -137,6 +158,7 @@ class MlAssistController extends Controller
      */
     public function chat(Request $request): JsonResponse
     {
+        $this->activeRequest = $request;
         $type = strtolower((string) $request->input('object_type', 'alert'));
         $id = (int) $request->input('object_id');
         $message = trim((string) $request->input('message', ''));
@@ -156,6 +178,11 @@ class MlAssistController extends Controller
             ], 422);
         }
 
+        if (($type === 'alert' && ! AgencyAccess::canAccessAlert($request, $id))
+            || ($type === 'client' && ! AgencyAccess::canAccessClient($request, $id))) {
+            return response()->json(['success' => false, 'message' => 'Dossier introuvable.'], 404);
+        }
+
         $sessionUser = $this->authenticatedUserContext($request);
         if ($this->isSessionIdentityQuestion($message) && $sessionUser !== null) {
             return response()->json([
@@ -170,20 +197,28 @@ class MlAssistController extends Controller
             ]);
         }
 
+        if ($this->isSimpleGreeting($message)) {
+            return $this->localChatResponse(
+                $this->localFallbackChat($message, $type, $id, $sessionUser),
+                false
+            );
+        }
+
         try {
             $llm = $this->askAgent($message, $history, $type, $id, $sessionUser);
         } catch (Throwable $e) {
             report($e);
-            if ($e->getMessage() === 'GROQ_API_KEY absente.') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Le chatbot conversationnel doit être configuré : ajoutez GROQ_API_KEY dans le fichier .env.',
-                ], 502);
+            try {
+                $fallback = $this->localFallbackChat($message, $type, $id, $sessionUser);
+
+                return $this->localChatResponse($fallback, true);
+            } catch (Throwable $fallbackError) {
+                report($fallbackError);
             }
 
             return response()->json([
                 'success' => false,
-                'message' => 'Le service conversationnel ne peut pas répondre actuellement. Aucune analyse n’a été générée. Réessayez dans quelques instants.',
+                'message' => 'Le service conversationnel et son mode local sont momentanément indisponibles.',
             ], 503);
         }
 
@@ -197,6 +232,378 @@ class MlAssistController extends Controller
                 'disclaimer' => 'Aide à la conformité : vérifier les faits et conserver la décision humaine.',
             ],
         ]);
+    }
+
+    private function localChatResponse(array $fallback, bool $degraded): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'message' => $fallback['text'],
+                'provider' => 'local',
+                'model' => $fallback['model'],
+                'sources' => $fallback['sources'],
+                'degraded' => $degraded,
+                'disclaimer' => 'Mode local : réponse produite à partir des données autorisées et des règles de l’application.',
+            ],
+        ]);
+    }
+
+    /**
+     * Réponse locale fiable lorsque le fournisseur conversationnel est
+     * indisponible. Aucun fait métier n'est généré sans lecture de la base.
+     */
+    private function localFallbackChat(
+        string $message,
+        string $objectType,
+        int $objectId,
+        ?array $sessionUser
+    ): array {
+        $normalized = trim(mb_strtolower($message));
+
+        if ($this->isSimpleGreeting($normalized)) {
+            return [
+                'text' => $this->localGreeting($sessionUser),
+                'model' => 'sentinelle-local-v1',
+                'sources' => ['session_authentifiee'],
+            ];
+        }
+
+        if ($objectType === 'alert') {
+            return $this->localAlertAnswer($message, $objectId);
+        }
+
+        if ($objectType === 'client') {
+            return $this->localClientAnswer($message, $objectId);
+        }
+
+        if (preg_match('/\bSCALE-C-\d+\b/ui', $message, $matches)) {
+            $reference = strtoupper($matches[0]);
+            $query = DB::table('clients as c')
+                ->leftJoin('accounts as a', 'a.client_id', '=', 'c.id')
+                ->where('c.client_number', $reference);
+            $this->scopeClientQuery($query);
+            $clientId = (int) $query->value('c.id');
+
+            if ($clientId > 0) {
+                return $this->localClientAnswer($message, $clientId);
+            }
+
+            return [
+                'text' => "Je ne trouve aucun client accessible avec la référence **{$reference}**.",
+                'model' => 'sentinelle-local-v1',
+                'sources' => ['rechercher_client'],
+            ];
+        }
+
+        if (preg_match('/\b(alertes?|aml)\b/ui', $message)) {
+            $priority = match (true) {
+                preg_match('/\b(critique|critical|critiques)\b/ui', $message) === 1 => 'CRITICAL',
+                preg_match('/\b(élevé|élevée|élevées|high)\b/ui', $message) === 1 => 'HIGH',
+                preg_match('/\b(moyen|moyenne|medium)\b/ui', $message) === 1 => 'MEDIUM',
+                preg_match('/\b(faible|low)\b/ui', $message) === 1 => 'LOW',
+                default => '',
+            };
+            $status = preg_match('/\b(ouverte?s?|active?s?|en action)\b/ui', $message) === 1 ? 'OPEN' : '';
+
+            return $this->localGlobalAlertsAnswer($priority, $status);
+        }
+
+        return [
+            'text' => $this->localCapabilities($sessionUser),
+            'model' => 'sentinelle-local-v1',
+            'sources' => ['session_authentifiee'],
+        ];
+    }
+
+    private function isSimpleGreeting(string $message): bool
+    {
+        return preg_match(
+            '/^(salut|bonjour|bonsoir|hello|coucou)([\s,!.-]*(ça va|comment ça va|à bientôt))?[\s!.?]*$/u',
+            trim(mb_strtolower($message))
+        ) === 1;
+    }
+
+    private function localGreeting(?array $sessionUser): string
+    {
+        $firstName = trim((string) ($sessionUser['first_name'] ?? ''));
+        $salutation = $firstName !== '' ? "Bonjour {$firstName}." : 'Bonjour.';
+
+        return $salutation.' '.$this->localCapabilities($sessionUser);
+    }
+
+    private function localCapabilities(?array $sessionUser): string
+    {
+        $role = mb_strtoupper((string) ($sessionUser['role']['name'] ?? ''));
+
+        return match (true) {
+            str_contains($role, 'ADMIN') => 'Je peux vérifier les utilisateurs, les périmètres, les moteurs et les parcours de démonstration. Je peux aussi rechercher un client ou lister les alertes ouvertes.',
+            str_contains($role, 'SUPERV') => 'Je peux résumer la file locale, lister les alertes prioritaires et préparer les éléments factuels à escalader vers la conformité.',
+            str_contains($role, 'AGENT') => 'Je peux rechercher un client, vérifier un dossier accessible et signaler les éléments à transmettre à la conformité.',
+            default => 'Je peux résumer un dossier, expliquer ses signaux AML et ML, proposer des vérifications ou préparer un brouillon factuel.',
+        };
+    }
+
+    private function localIntent(string $message): string
+    {
+        return match (true) {
+            preg_match('/\b(brouillon|centif|déclaration|declaration)\b/ui', $message) === 1 => 'draft_centif',
+            preg_match('/\b(question|vérification|verification|diligence|prochaine?s? étape?s?)\b/ui', $message) === 1 => 'suggest_questions',
+            preg_match('/\b(score ml|modèle|modele|prédiction|prediction|facteurs? ml)\b/ui', $message) === 1 => 'ml_score',
+            preg_match('/\b(explique|expliquer|analyse|signaux?|règles?|regles?|risques?|pourquoi)\b/ui', $message) === 1 => 'explain',
+            default => 'summarize',
+        };
+    }
+
+    private function localAlertAnswer(string $message, int $alertId): array
+    {
+        try {
+            $context = DB::table('v_assist_alert_context')->where('alert_id', $alertId)->first();
+        } catch (Throwable) {
+            $context = null;
+        }
+        $context ??= $this->fallbackAlertContext($alertId);
+
+        if (! $context) {
+            return [
+                'text' => 'Je ne retrouve pas cette alerte dans votre périmètre.',
+                'model' => 'sentinelle-local-v1',
+                'sources' => ['obtenir_alerte'],
+            ];
+        }
+
+        $intent = $this->localIntent($message);
+        $payload = $this->buildAlertAssist($context, $intent);
+        $sources = ['obtenir_alerte'];
+
+        if ($intent === 'suggest_questions') {
+            return [
+                'text' => "### Vérifications proposées\n- ".implode("\n- ", $payload['questions']),
+                'model' => 'sentinelle-local-v1',
+                'sources' => $sources,
+            ];
+        }
+
+        if ($intent === 'draft_centif') {
+            return [
+                'text' => "### Brouillon factuel à valider\n".($payload['draft'] ?? $payload['summary']),
+                'model' => 'sentinelle-local-v1',
+                'sources' => $sources,
+            ];
+        }
+
+        if ($intent === 'ml_score') {
+            $ml = $this->localMlAnswer((int) ($context->client_id ?? 0));
+
+            return [
+                'text' => $ml['text'],
+                'model' => 'sentinelle-local-v1',
+                'sources' => array_values(array_unique([...$sources, ...$ml['sources']])),
+            ];
+        }
+
+        if ($intent === 'explain') {
+            $factorLines = collect($payload['factors'])
+                ->map(fn (array $factor) => '- **'.$factor['label'].' :** '.$factor['value'])
+                ->implode("\n");
+            $ml = $this->localMlAnswer((int) ($context->client_id ?? 0));
+
+            return [
+                'text' => "### Signaux vérifiés\n{$factorLines}\n\n{$ml['text']}\n\n### Lecture prudente\nCes signaux justifient une revue du contexte économique et de l’historique. Ils ne constituent pas, à eux seuls, une décision de conformité.",
+                'model' => 'sentinelle-local-v1',
+                'sources' => array_values(array_unique([...$sources, 'obtenir_regles_declenchees', ...$ml['sources']])),
+            ];
+        }
+
+        return [
+            'text' => "### Synthèse du dossier\n".$this->summaryAsBullets($payload['summary']),
+            'model' => 'sentinelle-local-v1',
+            'sources' => $sources,
+        ];
+    }
+
+    private function localClientAnswer(string $message, int $clientId): array
+    {
+        try {
+            $context = DB::table('v_assist_client_context')->where('client_id', $clientId)->first();
+        } catch (Throwable) {
+            $context = null;
+        }
+
+        if (! $context) {
+            $details = $this->clientDetails($clientId)['client'] ?? null;
+            if (! $details) {
+                return [
+                    'text' => 'Je ne retrouve pas ce client dans votre périmètre.',
+                    'model' => 'sentinelle-local-v1',
+                    'sources' => ['obtenir_client'],
+                ];
+            }
+
+            $name = trim(($details['first_name'] ?? '').' '.($details['last_name'] ?? ''))
+                ?: ($details['legal_name'] ?? $details['reference'] ?? 'Client');
+            $alerts = $this->clientAlerts($clientId)['alertes'] ?? [];
+            $context = (object) [
+                'client_id' => $clientId,
+                'client_number' => $details['reference'] ?? '',
+                'customer_name' => $name,
+                'client_type' => $details['client_type'] ?? 'n/d',
+                'client_status' => $details['status'] ?? 'n/d',
+                'risk_level' => $details['risk_level'] ?? 'n/d',
+                'risk_score' => $details['risk_score'] ?? 'n/d',
+                'tx_count_30d' => 0,
+                'tx_volume_30d' => 0,
+                'open_alerts' => collect($alerts)->where('status', 'OPEN')->count(),
+                'total_alerts' => count($alerts),
+                'is_pep' => $details['is_pep'] ?? false,
+                'has_pep_match' => false,
+                'has_sanction_match' => false,
+                'agency_name' => $details['agency_name'] ?? 'n/d',
+                'caisse_name' => 'n/d',
+            ];
+        }
+
+        $intent = $this->localIntent($message);
+        $payload = $this->buildClientAssist($context, $intent);
+        $sources = ['obtenir_client'];
+
+        if ($intent === 'suggest_questions') {
+            return [
+                'text' => "### Vérifications proposées\n- ".implode("\n- ", $payload['questions']),
+                'model' => 'sentinelle-local-v1',
+                'sources' => $sources,
+            ];
+        }
+
+        if ($intent === 'ml_score') {
+            $ml = $this->localMlAnswer($clientId);
+
+            return ['text' => $ml['text'], 'model' => 'sentinelle-local-v1', 'sources' => [...$sources, ...$ml['sources']]];
+        }
+
+        if ($intent === 'explain') {
+            $factorLines = collect($payload['factors'])
+                ->map(fn (array $factor) => '- **'.$factor['label'].' :** '.$factor['value'])
+                ->implode("\n");
+            $ml = $this->localMlAnswer($clientId);
+
+            return [
+                'text' => "### Profil vérifié\n{$factorLines}\n\n{$ml['text']}\n\n### Lecture prudente\nLe niveau de risque, les alertes et le signal ML doivent être rapprochés du KYC et de l’activité récente avant toute décision.",
+                'model' => 'sentinelle-local-v1',
+                'sources' => array_values(array_unique([...$sources, ...$ml['sources']])),
+            ];
+        }
+
+        return [
+            'text' => "### Synthèse client\n".$this->summaryAsBullets($payload['summary']),
+            'model' => 'sentinelle-local-v1',
+            'sources' => $sources,
+        ];
+    }
+
+    private function localGlobalAlertsAnswer(string $priority, string $status): array
+    {
+        $result = $this->globalAlerts($priority, $status, 10);
+        $alerts = $result['alertes'] ?? [];
+        $priorityLabel = match ($priority) {
+            'CRITICAL' => 'critiques',
+            'HIGH' => 'élevées',
+            'MEDIUM' => 'moyennes',
+            'LOW' => 'faibles',
+            default => null,
+        };
+        $label = trim(implode(' ', array_filter([
+            $priorityLabel,
+            $status === 'OPEN' ? 'ouvertes' : null,
+        ])));
+        $title = $label !== '' ? "Alertes {$label}" : 'Alertes accessibles';
+
+        if ($alerts === []) {
+            $text = "### {$title}\nAucune alerte ne correspond à ces critères dans votre périmètre.";
+        } else {
+            $lines = collect($alerts)->map(function (array $alert) {
+                $score = $alert['score'] !== null ? ' · score '.number_format((float) $alert['score'], 0, ',', ' ').'/100' : '';
+
+                return '- **'.($alert['reference'] ?? 'Alerte').'** — '.($alert['client'] ?? 'client non renseigné').$score.' · '.$this->humanAlertStatus((string) ($alert['status'] ?? ''));
+            })->implode("\n");
+            $total = (int) ($result['total'] ?? count($alerts));
+            $intro = $total > count($alerts)
+                ? "**{$total} résultats** ; voici les ".count($alerts).' premiers.'
+                : "**{$total} résultat".($total > 1 ? 's' : '').".**";
+            $text = "### {$title}\n{$intro}\n{$lines}";
+        }
+
+        return [
+            'text' => $text,
+            'model' => 'sentinelle-local-v1',
+            'sources' => ['obtenir_alertes_globales'],
+        ];
+    }
+
+    private function localMlAnswer(int $clientId): array
+    {
+        if ($clientId <= 0) {
+            return [
+                'text' => "### Signal ML\nAucun client n’est associé au dossier ; le score ML ne peut pas être vérifié.",
+                'sources' => ['obtenir_score_ml_et_facteurs'],
+            ];
+        }
+
+        $result = $this->mlScoreAndFactors($clientId);
+        $prediction = $result['prediction'] ?? null;
+        if (! $prediction) {
+            return [
+                'text' => "### Signal ML\nAucune prédiction ML enregistrée n’est disponible pour ce client.",
+                'sources' => ['obtenir_score_ml_et_facteurs'],
+            ];
+        }
+
+        $probability = (float) ($prediction['probability'] ?? 0);
+        $score = $probability <= 1 ? $probability * 100 : $probability;
+        $text = "### Signal ML\n- **Niveau prédit :** ".$this->humanRiskLevel((string) ($prediction['predicted_risk'] ?? ''))
+            ."\n- **Probabilité :** ".number_format($score, 1, ',', ' ').'/100'
+            ."\n- **Dernière analyse :** ".($prediction['predicted_at'] ?? 'date non renseignée');
+
+        $factors = collect($result['facteurs'] ?? [])->take(5)->map(function (array $factor) {
+            $importance = number_format((float) ($factor['importance_score'] ?? 0), 2, ',', ' ');
+
+            return '- **'.($factor['feature_name'] ?? 'Facteur').' :** '.($factor['feature_value'] ?? 'n/d')." (importance {$importance})";
+        })->implode("\n");
+        if ($factors !== '') {
+            $text .= "\n\n### Facteurs principaux\n{$factors}";
+        }
+        $text .= "\n\nLe signal ML complète le score AML ; il ne le remplace pas.";
+
+        return ['text' => $text, 'sources' => ['obtenir_score_ml_et_facteurs']];
+    }
+
+    private function summaryAsBullets(string $summary): string
+    {
+        $lines = array_values(array_filter(array_map('trim', preg_split('/\R/u', $summary) ?: [])));
+
+        return '- '.implode("\n- ", $lines);
+    }
+
+    private function humanRiskLevel(string $level): string
+    {
+        return match (mb_strtoupper(trim($level))) {
+            'CRITICAL' => 'Critique',
+            'HIGH' => 'Élevé',
+            'MEDIUM' => 'Moyen',
+            'LOW' => 'Faible',
+            default => $level !== '' ? $level : 'Non renseigné',
+        };
+    }
+
+    private function humanAlertStatus(string $status): string
+    {
+        return match (mb_strtoupper(trim($status))) {
+            'OPEN' => 'ouverte',
+            'IN_REVIEW' => 'en revue',
+            'CLOSED' => 'clôturée',
+            'DISMISSED' => 'écartée',
+            default => $status !== '' ? mb_strtolower($status) : 'statut non renseigné',
+        };
     }
 
     /**
@@ -327,7 +734,8 @@ class MlAssistController extends Controller
     private function questionRequiresToolUse(string $question, string $objectType): bool
     {
         $question = trim(mb_strtolower($question));
-        if (preg_match('/^(salut|bonjour|bonsoir|hello|coucou|merci|au revoir)([\s,!.-]*(ça va|comment ça va|à bientôt))?[\s!.?]*$/u', $question)) {
+        if ($this->isSimpleGreeting($question)
+            || preg_match('/^(merci|au revoir)[\s!.?]*$/u', $question)) {
             return false;
         }
 
@@ -541,6 +949,7 @@ class MlAssistController extends Controller
         $rows = DB::table('clients as c')
             ->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
             ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
+            ->leftJoin('accounts as a', 'a.client_id', '=', 'c.id')
             ->select('c.id', 'c.client_number', 'ci.first_name', 'ci.last_name', 'ce.legal_name')
             ->where(function ($q) use ($terms) {
                 foreach ($terms as $term) {
@@ -550,11 +959,16 @@ class MlAssistController extends Controller
                             ->orWhere('ce.legal_name', 'like', "%{$term}%");
                     });
                 }
-            })->limit(20)->get();
+            });
+        $this->scopeClientQuery($rows);
+        $rows = $rows->distinct()->limit(20)->get();
         if ($rows->isEmpty()) {
             $rows = DB::table('clients as c')->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
                 ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
-                ->select('c.id', 'c.client_number', 'ci.first_name', 'ci.last_name', 'ce.legal_name')->limit(5000)->get();
+                ->leftJoin('accounts as a', 'a.client_id', '=', 'c.id')
+                ->select('c.id', 'c.client_number', 'ci.first_name', 'ci.last_name', 'ce.legal_name');
+            $this->scopeClientQuery($rows);
+            $rows = $rows->distinct()->limit(5000)->get();
         }
 
         return ['clients' => $rows->map(function ($row) use ($needle) {
@@ -567,12 +981,20 @@ class MlAssistController extends Controller
 
     private function clientAlerts(int $clientId): array
     {
+        if (! $this->canAccessClient($clientId)) {
+            return ['alertes' => []];
+        }
+
         return ['alertes' => DB::table('alerts')->where('client_id', $clientId)->orderByDesc('created_at')->limit(20)
             ->get(['id as alert_id', 'reference', 'priority as niveau', 'status', 'final_score as score', 'created_at as date'])->map(fn ($r) => (array) $r)->all()];
     }
 
     private function clientDetails(int $clientId): array
     {
+        if (! $this->canAccessClient($clientId)) {
+            return ['client' => null];
+        }
+
         $client = DB::table('clients as c')
             ->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
             ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
@@ -591,6 +1013,10 @@ class MlAssistController extends Controller
 
     private function alertDetails(int $alertId): array
     {
+        if (! $this->canAccessAlert($alertId)) {
+            return ['alerte' => null];
+        }
+
         $alert = DB::table('alerts as a')
             ->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
             ->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
@@ -619,10 +1045,22 @@ class MlAssistController extends Controller
             default => strtoupper(trim($status)),
         };
         $query = DB::table('alerts as a')->leftJoin('clients as c', 'c.id', '=', 'a.client_id')
+            ->leftJoin('transactions as t', 't.id', '=', 'a.transaction_id')
+            ->leftJoin('accounts as acc', 'acc.id', '=', 't.account_id')
             ->leftJoin('client_individuals as ci', 'ci.client_id', '=', 'c.id')
             ->leftJoin('client_entities as ce', 'ce.client_id', '=', 'c.id')
             ->select('a.id as alert_id', 'a.reference', 'a.priority', 'a.status', 'a.final_score as score', 'a.created_at as date',
                 DB::raw("COALESCE(NULLIF(TRIM(CONCAT(COALESCE(ci.first_name,''), ' ', COALESCE(ci.last_name,''))), ''), ce.legal_name, c.client_number) as client"));
+        if ($this->activeRequest) {
+            AgencyAccess::constrain(
+                $query,
+                $this->activeRequest,
+                DB::raw('COALESCE(t.agency_id, c.agency_id)'),
+                'acc.account_manager_id'
+            );
+        } else {
+            $query->whereRaw('1 = 0');
+        }
         if ($priority !== '') {
             $query->where('a.priority', strtoupper($priority));
         }
@@ -637,6 +1075,10 @@ class MlAssistController extends Controller
 
     private function alertRules(int $alertId): array
     {
+        if (! $this->canAccessAlert($alertId)) {
+            return ['regles' => []];
+        }
+
         $transactionId = (int) DB::table('alerts')->where('id', $alertId)->value('transaction_id');
         if ($transactionId <= 0) {
             return ['regles' => [], 'message' => 'Cette alerte n’est liée à aucune transaction.'];
@@ -651,6 +1093,10 @@ class MlAssistController extends Controller
 
     private function screeningStatus(int $clientId): array
     {
+        if (! $this->canAccessClient($clientId)) {
+            return ['est_ppe' => false, 'correspondances_ppe' => [], 'correspondances_sanctions' => []];
+        }
+
         return ['est_ppe' => (bool) DB::table('clients')->where('id', $clientId)->value('is_pep'),
             'correspondances_ppe' => DB::table('pep_matches')->where('client_id', $clientId)->get(['pep_category', 'position', 'country', 'match_score'])->map(fn ($r) => (array) $r)->all(),
             'correspondances_sanctions' => DB::table('sanction_matches')->where('client_id', $clientId)->get(['sanction_type', 'authority', 'reason', 'match_score'])->map(fn ($r) => (array) $r)->all()];
@@ -658,6 +1104,10 @@ class MlAssistController extends Controller
 
     private function transactionHistory(int $clientId, int $days): array
     {
+        if (! $this->canAccessClient($clientId)) {
+            return ['periode_jours' => $days, 'transactions' => []];
+        }
+
         return ['periode_jours' => $days, 'transactions' => DB::table('transactions as t')->join('accounts as a', 'a.id', '=', 't.account_id')
             ->where('a.client_id', $clientId)->where('t.transaction_date', '>=', now()->subDays($days))->orderByDesc('t.transaction_date')->limit(50)
             ->get(['t.transaction_reference', 't.transaction_type', 't.amount', 't.currency', 't.channel', 't.country_from', 't.country_to', 't.transaction_date'])->map(fn ($r) => (array) $r)->all()];
@@ -665,6 +1115,10 @@ class MlAssistController extends Controller
 
     private function linkedAccountsNetwork(int $clientId, int $days): array
     {
+        if (! $this->canAccessClient($clientId)) {
+            return ['periode_jours' => $days, 'comptes_lies' => [], 'montant_cumule_reseau' => 0, 'seuil_depasse' => false];
+        }
+
         $client = DB::table('clients')->where('id', $clientId)->first(['phone', 'agency_id']);
         if (! $client) {
             return ['comptes_lies' => [], 'montant_cumule_reseau' => 0, 'seuil_depasse' => false];
@@ -672,7 +1126,8 @@ class MlAssistController extends Controller
         $documentNumbers = DB::table('identity_documents')->where('client_id', $clientId)->pluck('document_number')->filter()->all();
         $linked = [];
         if ($client->phone || $documentNumbers !== []) {
-            $linked = DB::table('clients as c')->leftJoin('identity_documents as d', 'd.client_id', '=', 'c.id')
+            $linkedQuery = DB::table('clients as c')->leftJoin('identity_documents as d', 'd.client_id', '=', 'c.id')
+                ->leftJoin('accounts as a', 'a.client_id', '=', 'c.id')
                 ->where('c.id', '!=', $clientId)->where(function ($q) use ($client, $documentNumbers) {
                     if ($client->phone) {
                         $q->orWhere('c.phone', $client->phone);
@@ -680,7 +1135,9 @@ class MlAssistController extends Controller
                     if ($documentNumbers !== []) {
                         $q->orWhereIn('d.document_number', $documentNumbers);
                     }
-                })->distinct()->limit(100)->pluck('c.id')->all();
+                });
+            $this->scopeClientQuery($linkedQuery);
+            $linked = $linkedQuery->distinct()->limit(100)->pluck('c.id')->all();
         }
         $ids = array_values(array_unique([$clientId, ...$linked]));
         $total = DB::table('transactions as t')->join('accounts as a', 'a.id', '=', 't.account_id')->whereIn('a.client_id', $ids)
@@ -693,11 +1150,37 @@ class MlAssistController extends Controller
 
     private function mlScoreAndFactors(int $clientId): array
     {
+        if (! $this->canAccessClient($clientId)) {
+            return ['prediction' => null, 'facteurs' => []];
+        }
+
         $prediction = DB::table('predictions')->where('client_id', $clientId)->orderByDesc('predicted_at')->first(['id', 'predicted_risk', 'probability', 'predicted_at']);
 
         return ['prediction' => $prediction ? (array) $prediction : null,
             'facteurs' => $prediction ? DB::table('prediction_explanations')->where('prediction_id', $prediction->id)->orderByDesc('importance_score')->limit(10)
                 ->get(['feature_name', 'feature_value', 'importance_score'])->map(fn ($r) => (array) $r)->all() : []];
+    }
+
+    private function canAccessClient(int $clientId): bool
+    {
+        return $this->activeRequest !== null
+            && AgencyAccess::canAccessClient($this->activeRequest, $clientId);
+    }
+
+    private function canAccessAlert(int $alertId): bool
+    {
+        return $this->activeRequest !== null
+            && AgencyAccess::canAccessAlert($this->activeRequest, $alertId);
+    }
+
+    private function scopeClientQuery($query): void
+    {
+        if ($this->activeRequest === null) {
+            $query->whereRaw('1 = 0');
+            return;
+        }
+
+        AgencyAccess::constrain($query, $this->activeRequest, 'c.agency_id', 'a.account_manager_id');
     }
 
     private function normaliseName(string $value): string

@@ -3,7 +3,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import DemoRail from "../components/DemoRail";
 import AssistPanel from "../components/AssistPanel";
-import { getAlertDetail, scoreAlertWithMl } from "../services/api";
+import {
+  createInvestigation,
+  decideAlert,
+  escalateAlert,
+  getAlertDetail,
+  scoreAlertWithMl,
+} from "../services/api";
+import { canAccess } from "../auth/access";
 import "./AlertDetail.css";
 
 const PRIORITY_LABEL = { CRITICAL: "Critique", HIGH: "Élevée", MEDIUM: "Moyenne", LOW: "Faible" };
@@ -53,6 +60,14 @@ function riskTypeLabel(type) {
     ML_TRANSACTION_RISK: "Prédiction comportementale ML", HIGH_CASH_ACTIVITY: "Forte activité espèces",
     UNUSUAL_VOLUME: "Volume inhabituel", STRUCTURING: "Structuration", LARGE_AMOUNT: "Montant élevé",
   }[type] || type?.replaceAll("_", " ") || "Évaluation AML");
+}
+
+function actionTypeLabel(type) {
+  return ({
+    ESCALATED_TO_COMPLIANCE: "Escalade conformité",
+    CONFIRMED_SUSPICIOUS: "Soupçon confirmé",
+    DISMISSED: "Alerte écartée",
+  }[type] || type?.replaceAll("_", " ") || "Action");
 }
 
 function formatDateTime(value) {
@@ -123,7 +138,7 @@ function RiskTable({ assessments }) {
   );
 }
 
-function MlAnalysisPanel({ analysis, status, error, onRefresh }) {
+function MlAnalysisPanel({ analysis, status, error, onRefresh, canRun }) {
   const factors = analysis?.factors || [];
   const maxImportance = Math.max(...factors.map((factor) => Number(factor.importance) || 0), 0);
   const isRunning = status === "scoring";
@@ -132,26 +147,24 @@ function MlAnalysisPanel({ analysis, status, error, onRefresh }) {
       <div className="alert-section-heading">
         <div>
           <span className="alert-eyebrow">INTELLIGENCE ML</span>
-          <h2>Analyse multicouche de l’opération</h2>
-          <p>Le modèle comportemental complète les règles AML et le screening. Le score opérationnel conserve le signal le plus prudent.</p>
+          <h2>Lecture comportementale distincte</h2>
+          <p>Le modèle ML complète l’analyse. Son score reste séparé du score AML déterministe.</p>
         </div>
         <div className="ml-heading-actions">
           <span className={`ml-status ${analysis ? "ml-ready" : isRunning ? "ml-running" : "ml-missing"}`}>
             <span aria-hidden="true" />{analysis ? "Modèle exécuté" : isRunning ? "Analyse en cours" : "À analyser"}
           </span>
-          <button className="alert-btn alert-btn-secondary" onClick={onRefresh} disabled={isRunning}>
+          {canRun && <button className="alert-btn alert-btn-secondary" onClick={onRefresh} disabled={isRunning}>
             {isRunning ? "Calcul…" : analysis ? "Recalculer" : "Lancer le score ML"}
-          </button>
+          </button>}
         </div>
       </div>
       {error && <div className="ml-error">{error}</div>}
       {analysis ? (
         <>
           <div className="ml-score-grid">
-            <div className="ml-score-card ml-operational"><span>Score opérationnel</span><strong>{scoreText(analysis.operational_score)}<small>/100</small></strong><em>Signal retenu pour la priorité</em></div>
-            <div className="ml-score-card"><span>Règles AML</span><strong>{scoreText(analysis.rule_score)}<small>/100</small></strong><em>Scénarios déterministes</em></div>
-            <div className="ml-score-card"><span>Modèle ML</span><strong>{scoreText(analysis.model_score)}<small>/100</small></strong><em>Comportement statistique</em></div>
-            <div className="ml-score-card"><span>Score fusionné</span><strong>{scoreText(analysis.fused_score)}<small>/100</small></strong><em>ML + règles + screening</em></div>
+            <div className="ml-score-card ml-aml"><span>AML · règles</span><strong>{scoreText(analysis.rule_score)}<small>/100</small></strong><em>Scénarios déterministes</em></div>
+            <div className="ml-score-card ml-model"><span>ML · modèle</span><strong>{scoreText(analysis.model_score)}<small>/100</small></strong><em>Signal statistique d’assistance</em></div>
           </div>
           <div className="ml-explanation-grid">
             <div>
@@ -167,17 +180,14 @@ function MlAnalysisPanel({ analysis, status, error, onRefresh }) {
             </div>
             <aside className="ml-method-card">
               <span className="alert-eyebrow">MÉTHODE</span><h3>Une décision traçable</h3>
-              <p>La fusion combine le modèle, les règles AML et le screening. Une règle confirmée ne peut pas être abaissée par le modèle.</p>
-              <div className="ml-weights">
-                <span>ML <strong>{Math.round((analysis.weights?.model ?? 0.65) * 100)} %</strong></span>
-                <span>Règles <strong>{Math.round((analysis.weights?.rules ?? 0.2) * 100)} %</strong></span>
-                <span>Screening <strong>{Math.round((analysis.weights?.screening ?? 0.15) * 100)} %</strong></span>
-              </div>
+              <p>Le score AML explique les règles déclenchées. Le score ML apporte un second regard comportemental. L’analyste les examine séparément avant toute décision.</p>
               <small>Dernière exécution : {formatDateTime(analysis.scored_at)}</small>
             </aside>
           </div>
         </>
-      ) : !isRunning && !error ? <EmptyState>Le modèle sera exécuté automatiquement sur la transaction liée.</EmptyState> : null}
+      ) : !isRunning && !error ? <EmptyState>{canRun
+        ? "Le modèle sera exécuté automatiquement sur la transaction liée."
+        : "Aucun score ML n’est encore enregistré pour cette opération."}</EmptyState> : null}
     </section>
   );
 }
@@ -191,6 +201,16 @@ export default function AlertDetail({ user, onLogout }) {
   const [payload, setPayload] = useState(null);
   const [mlStatus, setMlStatus] = useState("idle");
   const [mlError, setMlError] = useState("");
+  const [actionMode, setActionMode] = useState("");
+  const [actionComment, setActionComment] = useState("");
+  const [actionDecision, setActionDecision] = useState("CONFIRMED_SUSPICIOUS");
+  const [actionStatus, setActionStatus] = useState("idle");
+  const [actionMessage, setActionMessage] = useState(null);
+  const canUseMl = canAccess(user, "ml.use");
+  const canEscalate = canAccess(user, "alert.escalate");
+  const canDecide = canAccess(user, "alert.decide");
+  const canManageInvestigation = canAccess(user, "investigation.manage");
+  const tabs = TABS.filter((tab) => tab !== "Investigation" || canAccess(user, "investigation.view"));
 
   useEffect(() => {
     let active = true;
@@ -201,7 +221,7 @@ export default function AlertDetail({ user, onLogout }) {
         if (!active) return;
         if (!response?.success || !response.data) throw new Error(response?.message || "Alerte introuvable.");
         setPayload(response.data);
-        const needsScore = response.data.alert?.transaction_id && !response.data.ml_analysis;
+        const needsScore = canUseMl && response.data.alert?.transaction_id && !response.data.ml_analysis;
         if (needsScore) {
           setMlStatus("scoring");
           try {
@@ -221,9 +241,10 @@ export default function AlertDetail({ user, onLogout }) {
     }
     if (id) load();
     return () => { active = false; };
-  }, [id]);
+  }, [id, canUseMl]);
 
   async function refreshMlScore() {
+    if (!canUseMl) return;
     setMlStatus("scoring"); setMlError("");
     try {
       const result = await scoreAlertWithMl(id);
@@ -237,15 +258,72 @@ export default function AlertDetail({ user, onLogout }) {
     }
   }
 
+  function prepareAction(mode) {
+    setActionMode(mode);
+    setActionComment("");
+    setActionMessage(null);
+  }
+
+  async function submitOperationalAction(event) {
+    event.preventDefault();
+
+    if (actionMode !== "investigation" && actionComment.trim().length < 10) {
+      setActionMessage({ type: "error", text: "Décrivez le motif en au moins 10 caractères." });
+      return;
+    }
+
+    setActionStatus("saving");
+    setActionMessage(null);
+
+    try {
+      let response;
+      let successText;
+
+      if (actionMode === "escalate") {
+        response = await escalateAlert(id, actionComment.trim());
+        successText = "L’alerte a été transmise à la file de conformité.";
+      } else if (actionMode === "decision") {
+        response = await decideAlert(id, actionDecision, actionComment.trim());
+        successText = actionDecision === "DISMISSED"
+          ? "L’alerte a été écartée et clôturée."
+          : "Le soupçon a été confirmé et l’alerte clôturée.";
+      } else if (actionMode === "investigation") {
+        response = await createInvestigation(Number(id));
+        successText = "Une investigation a été ouverte sur cette alerte.";
+      }
+
+      if (!response?.success) throw new Error(response?.message || "L’action n’a pas pu être enregistrée.");
+
+      const refreshed = await getAlertDetail(id);
+      if (refreshed?.success) setPayload(refreshed.data);
+      setActionMode("");
+      setActionComment("");
+      setActionMessage({ type: "success", text: successText });
+      setActiveTab(actionMode === "investigation" ? "Investigation" : "Actions");
+    } catch (actionError) {
+      setActionMessage({
+        type: "error",
+        text: actionError.response?.data?.error
+          || actionError.response?.data?.message
+          || actionError.message
+          || "L’action n’a pas pu être enregistrée.",
+      });
+    } finally {
+      setActionStatus("idle");
+    }
+  }
+
   const alert = payload?.alert || null;
   const actions = payload?.actions || [];
   const investigations = payload?.investigations || [];
   const riskAssessments = payload?.risk_assessments || [];
   const mlAnalysis = payload?.ml_analysis || null;
   const mainRisk = riskAssessments.find((item) => item.source !== "ML_MODEL") || riskAssessments[0] || null;
+  const isClosed = ["CLOSED", "DISMISSED", "RESOLVED"].includes(String(alert?.status || "").toUpperCase());
+  const canOperate = canEscalate || canDecide || canManageInvestigation;
 
   return (
-    <div className="app-shell"><Sidebar user={user} onLogout={onLogout} /><div className="app-main"><DemoRail />
+    <div className="app-shell"><Sidebar user={user} onLogout={onLogout} /><div className="app-main"><DemoRail user={user} />
       <main className="alert-detail-content">
         <nav className="alert-breadcrumb" aria-label="Fil d’Ariane"><button type="button" onClick={() => navigate("/alertes")}>Alertes</button><span>›</span><strong>{alert?.reference || `Alerte #${id}`}</strong></nav>
         {loading && <div className="alert-loading"><span />Chargement du dossier d’alerte…</div>}
@@ -253,14 +331,17 @@ export default function AlertDetail({ user, onLogout }) {
         {!loading && !error && alert && <>
           <header className={`alert-hero alert-hero-${String(alert.priority || "low").toLowerCase()}`}>
             <div className="alert-hero-main">
-              <div className="alert-hero-topline"><span className="alert-reference">{alert.reference || `ALT-${alert.id}`}</span><span className="alert-live-indicator"><i /> Surveillance active</span></div>
+              <div className="alert-hero-topline"><span className="alert-reference">{alert.reference || `ALT-${alert.id}`}</span><span className={`alert-live-indicator${isClosed ? " is-closed" : ""}`}><i /> {isClosed ? "Traitement terminé" : "Surveillance active"}</span></div>
               <h1>{alert.title || alertTypeLabel(alert.alert_type)}</h1>
               <p>{alert.description || mainRisk?.reason || "Alerte générée par le dispositif de surveillance AML."}</p>
               <div className="alert-hero-meta"><span>Créée le {formatDateTime(alert.created_at)}</span><span>Transaction {alert.transaction_reference || "non renseignée"}</span><span>Client {alert.client_number || "non renseigné"}</span></div>
             </div>
             <div className="alert-hero-decision">
               <div className="alert-header-badges"><PriorityBadge priority={alert.priority} /><StatusBadge status={alert.status} /></div>
-              <span className="alert-score-label">Score opérationnel</span><strong className="alert-hero-score">{scoreText(mlAnalysis?.operational_score ?? alert.final_score)}<small>/100</small></strong><span className="alert-score-source">Règles et intelligence ML</span>
+              <div className="alert-hero-scores">
+                <div><span>AML · règles</span><strong>{scoreText(mainRisk?.score ?? alert.aml_score ?? alert.final_score)}<small>/100</small></strong></div>
+                <div className="is-ml"><span>ML · modèle</span><strong>{mlAnalysis ? scoreText(mlAnalysis.model_score) : "—"}<small>/100</small></strong></div>
+              </div>
             </div>
           </header>
 
@@ -268,10 +349,40 @@ export default function AlertDetail({ user, onLogout }) {
             <div className="alert-kpi"><span>Client concerné</span><strong>{alert.client_name || "—"}</strong><small>{alert.client_number || "Référence indisponible"}</small></div>
             <div className="alert-kpi"><span>Opération analysée</span><strong>{formatAmount(alert.amount, alert.currency)}</strong><small>{alertTypeLabel(alert.transaction_type)}</small></div>
             <div className="alert-kpi"><span>Signal principal</span><strong>{riskTypeLabel(mainRisk?.risk_type || alert.alert_type)}</strong><small>{mainRisk ? `${scoreText(mainRisk.score)}/100 par ${mainRisk.source || "moteur AML"}` : "À qualifier"}</small></div>
-            <div className="alert-kpi"><span>Modèle ML</span><strong>{mlAnalysis ? `${scoreText(mlAnalysis.model_score)}/100` : mlStatus === "scoring" ? "Calcul…" : "À lancer"}</strong><small>{mlAnalysis ? `Exécuté le ${formatDateTime(mlAnalysis.scored_at)}` : "Analyse comportementale"}</small></div>
+            <div className="alert-kpi"><span>Modèle ML</span><strong>{mlAnalysis ? `${scoreText(mlAnalysis.model_score)}/100` : mlStatus === "scoring" ? "Calcul…" : canUseMl ? "À lancer" : "Non disponible"}</strong><small>{mlAnalysis ? `Exécuté le ${formatDateTime(mlAnalysis.scored_at)}` : "Aucun score enregistré"}</small></div>
           </section>
 
-          <nav className="alert-tabs" role="tablist" aria-label="Sections du dossier">{TABS.map((tab) => <button key={tab} type="button" role="tab" aria-selected={activeTab === tab} className={activeTab === tab ? "is-active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>)}</nav>
+          {canOperate && <section className="alert-action-center" aria-label="Actions sur l’alerte">
+            <div className="alert-action-summary">
+              <span className="alert-eyebrow">TRAITEMENT DU DOSSIER</span>
+              <h2>{isClosed ? "Alerte clôturée" : "Prochaine action"}</h2>
+              <p>{isClosed
+                ? "La décision finale et sa justification sont conservées dans le journal ci-dessous."
+                : "Choisissez une action autorisée pour votre rôle. Chaque intervention est horodatée et tracée."}</p>
+            </div>
+            {!isClosed && <div className="alert-action-buttons">
+              {canEscalate && <button type="button" className="alert-action-button alert-action-escalate" onClick={() => prepareAction("escalate")}><span>↗</span><strong>Escalader</strong><small>Passer en analyse</small></button>}
+              {canManageInvestigation && <button type="button" className="alert-action-button alert-action-investigate" onClick={() => prepareAction("investigation")}><span>⌕</span><strong>Ouvrir une investigation</strong><small>Créer un dossier de traitement</small></button>}
+              {canDecide && <button type="button" className="alert-action-button alert-action-decide" onClick={() => prepareAction("decision")}><span>✓</span><strong>Prendre une décision</strong><small>Clôturer avec justification</small></button>}
+            </div>}
+
+            {actionMode && !isClosed && <form className="alert-action-form" onSubmit={submitOperationalAction}>
+              <div className="alert-action-form-heading">
+                <div>
+                  <strong>{actionMode === "escalate" ? "Escalader l’alerte" : actionMode === "investigation" ? "Ouvrir une investigation" : "Décision finale"}</strong>
+                  <small>{actionMode === "investigation" ? "Le dossier sera créé sans assignation et pourra être attribué ensuite." : "La justification sera enregistrée dans le journal de l’alerte."}</small>
+                </div>
+                <button type="button" className="alert-action-close" aria-label="Fermer" onClick={() => setActionMode("")}>×</button>
+              </div>
+              {actionMode === "decision" && <label className="alert-action-field"><span>Décision</span><select value={actionDecision} onChange={(event) => setActionDecision(event.target.value)}><option value="CONFIRMED_SUSPICIOUS">Confirmer le soupçon</option><option value="DISMISSED">Écarter l’alerte</option></select></label>}
+              {actionMode !== "investigation" && <label className="alert-action-field"><span>Motif détaillé</span><textarea rows="3" value={actionComment} onChange={(event) => setActionComment(event.target.value)} placeholder="Expliquez les éléments factuels qui motivent cette action…" /><small>{actionComment.trim().length}/10 caractères minimum</small></label>}
+              <div className="alert-action-form-footer"><button type="button" className="alert-btn alert-btn-secondary" onClick={() => setActionMode("")}>Annuler</button><button type="submit" className="alert-btn alert-btn-primary" disabled={actionStatus === "saving"}>{actionStatus === "saving" ? "Enregistrement…" : "Confirmer l’action"}</button></div>
+            </form>}
+
+            {actionMessage && <div className={`alert-action-message is-${actionMessage.type}`} role="status">{actionMessage.text}</div>}
+          </section>}
+
+          <nav className="alert-tabs" role="tablist" aria-label="Sections du dossier">{tabs.map((tab) => <button key={tab} type="button" role="tab" aria-selected={activeTab === tab} className={activeTab === tab ? "is-active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>)}</nav>
 
           {activeTab === "Résumé" && <div className="alert-tab-content">
             <div className="alert-summary-grid">
@@ -282,7 +393,7 @@ export default function AlertDetail({ user, onLogout }) {
                 <div className="alert-context-grid"><div><span>Source</span><strong>{mainRisk?.source || "—"}</strong></div><div><span>Canal</span><strong>{alert.channel || "—"}</strong></div><div><span>Origine</span><strong>{alert.country_from || alert.country || "—"}</strong></div><div><span>Destination</span><strong>{alert.country_to || "—"}</strong></div></div>
               </section>
             </div>
-            <MlAnalysisPanel analysis={mlAnalysis} status={mlStatus} error={mlError} onRefresh={refreshMlScore} />
+            <MlAnalysisPanel analysis={mlAnalysis} status={mlStatus} error={mlError} onRefresh={refreshMlScore} canRun={canUseMl} />
             <section className="alert-panel"><div className="alert-section-heading compact"><div><span className="alert-eyebrow">TRAÇABILITÉ</span><h2>Évaluations de risque</h2></div><span className="alert-count">{riskAssessments.length} évaluation{riskAssessments.length > 1 ? "s" : ""}</span></div><RiskTable assessments={riskAssessments} /></section>
           </div>}
 
@@ -296,17 +407,19 @@ export default function AlertDetail({ user, onLogout }) {
             <section className="alert-panel"><span className="alert-eyebrow">CONTEXTE</span><h2>Compte et localisation</h2><DetailRow label="Compte" value={alert.account_number} /><DetailRow label="Type de compte" value={alert.account_type} /><DetailRow label="Agence" value={alert.agency_name || alert.agency_code} /><DetailRow label="Caisse" value={alert.caisse_name || alert.caisse_code} /><DetailRow label="Itinéraire" value={[alert.country_from, alert.country_to].filter(Boolean).join(" → ") || alert.country} />{alert.transaction_id && <button className="alert-btn alert-btn-primary" onClick={() => navigate(`/transactions/${alert.transaction_id}`)}>Ouvrir la transaction</button>}</section>
           </div>}
 
-          {activeTab === "Risque" && <div className="alert-tab-content"><MlAnalysisPanel analysis={mlAnalysis} status={mlStatus} error={mlError} onRefresh={refreshMlScore} /><section className="alert-panel"><span className="alert-eyebrow">ÉVALUATIONS</span><h2>Historique des moteurs de risque</h2><RiskTable assessments={riskAssessments} /></section></div>}
+          {activeTab === "Risque" && <div className="alert-tab-content"><MlAnalysisPanel analysis={mlAnalysis} status={mlStatus} error={mlError} onRefresh={refreshMlScore} canRun={canUseMl} /><section className="alert-panel"><span className="alert-eyebrow">ÉVALUATIONS</span><h2>Historique des moteurs de risque</h2><RiskTable assessments={riskAssessments} /></section></div>}
 
           {activeTab === "Investigation" && <section className="alert-panel alert-tab-content"><span className="alert-eyebrow">TRAITEMENT</span><h2>Investigations associées</h2>
             {investigations.length ? <div className="alert-table-scroll"><table className="alert-data-table"><thead><tr><th>Dossier</th><th>Assigné à</th><th>Décision</th><th>Commentaire</th><th>Début</th><th>Clôture</th></tr></thead><tbody>{investigations.map((item) => <tr key={item.id}><td className="alert-cell-strong">INV-{item.id}</td><td>{item.assigned_name || item.assigned_username || "—"}</td><td>{item.decision || "En cours"}</td><td className="alert-reason-cell">{item.comment || "—"}</td><td className="alert-date-cell">{formatDateTime(item.started_at)}</td><td className="alert-date-cell">{formatDateTime(item.closed_at)}</td></tr>)}</tbody></table></div> : <EmptyState>Aucune investigation ouverte sur cette alerte.</EmptyState>}
           </section>}
 
           {activeTab === "Actions" && <section className="alert-panel alert-tab-content"><span className="alert-eyebrow">JOURNAL</span><h2>Historique des actions</h2>
-            {actions.length ? <div className="alert-table-scroll"><table className="alert-data-table"><thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Commentaire</th></tr></thead><tbody>{actions.map((item) => <tr key={item.id}><td className="alert-date-cell">{formatDateTime(item.created_at)}</td><td>{item.user_name || item.username || "—"}</td><td className="alert-cell-strong">{item.action_type || "—"}</td><td className="alert-reason-cell">{item.comment || "—"}</td></tr>)}</tbody></table></div> : <EmptyState>Aucune action enregistrée sur cette alerte.</EmptyState>}
+            {actions.length ? <div className="alert-table-scroll"><table className="alert-data-table"><thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Commentaire</th></tr></thead><tbody>{actions.map((item) => <tr key={item.id}><td className="alert-date-cell">{formatDateTime(item.created_at)}</td><td>{item.user_name || item.username || "—"}</td><td className="alert-cell-strong">{actionTypeLabel(item.action_type)}</td><td className="alert-reason-cell">{item.comment || "—"}</td></tr>)}</tbody></table></div> : <EmptyState>Aucune action enregistrée sur cette alerte.</EmptyState>}
           </section>}
 
-          <AssistPanel objectType="alert" objectId={Number(id)} transactionId={alert.transaction_id ? Number(alert.transaction_id) : null} title="Assist — cette alerte" />
+          {canUseMl && (
+            <AssistPanel user={user} objectType="alert" objectId={Number(id)} transactionId={alert.transaction_id ? Number(alert.transaction_id) : null} title="Assist — cette alerte" />
+          )}
         </>}
       </main>
     </div></div>

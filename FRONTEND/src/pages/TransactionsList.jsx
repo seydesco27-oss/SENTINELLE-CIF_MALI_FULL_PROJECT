@@ -95,7 +95,7 @@ function formatDateTime(value) {
 
 export default function TransactionsList({ user, onLogout }) {
   const navigate = useNavigate();
-  const canViewCompliance = canAccess(user, "risk_analysis");
+  const canViewCompliance = canAccess(user, "tx.view");
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

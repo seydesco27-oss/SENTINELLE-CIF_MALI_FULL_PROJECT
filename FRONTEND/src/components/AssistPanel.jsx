@@ -1,6 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { postAssistChat, postMlScore } from "../services/api";
+import { getStoredUser, postAssistChat, postMlScore } from "../services/api";
+import { getRoleId, ROLE_IDS } from "../auth/access";
 import "./AssistPanel.css";
+
+const ASSISTANT_PROFILES = {
+  [ROLE_IDS.ADMIN]: {
+    eyebrow: "ASSISTANT D’ADMINISTRATION",
+    greeting: "Je peux vérifier l’état des moteurs, les périmètres, les utilisateurs et les parcours de démonstration.",
+  },
+  [ROLE_IDS.COMPLIANCE_OFFICER]: {
+    eyebrow: "ASSISTANT DE CONFORMITÉ",
+    greeting: "Je peux résumer ce dossier, expliquer les signaux et proposer des vérifications factuelles.",
+  },
+  [ROLE_IDS.SUPERVISOR]: {
+    eyebrow: "ASSISTANT DE SUPERVISION",
+    greeting: "Je peux résumer la file locale, les volumes et les éléments à escalader vers la conformité.",
+  },
+  [ROLE_IDS.AGENT]: {
+    eyebrow: "AIDE OPÉRATIONNELLE",
+    greeting: "Je peux aider à contrôler la saisie et signaler un point de vigilance à la conformité.",
+  },
+};
 
 function renderInline(text) {
   return String(text)
@@ -109,7 +129,12 @@ export default function AssistPanel({
   defaultOpen = false,
   open: openProp = null,
   onOpenChange = null,
+  user: userProp = null,
 }) {
+  const user = userProp || getStoredUser();
+  const roleId = getRoleId(user);
+  const assistantProfile = ASSISTANT_PROFILES[roleId] || ASSISTANT_PROFILES[ROLE_IDS.COMPLIANCE_OFFICER];
+  const greeting = assistantProfile.greeting;
   const [openInternal, setOpenInternal] = useState(defaultOpen);
   const open = openProp != null ? openProp : openInternal;
   const setOpen = (v) => {
@@ -126,12 +151,11 @@ export default function AssistPanel({
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: "Je peux résumer le dossier, expliquer les signaux, proposer des vérifications ou préparer un brouillon CENTIF.",
+      content: greeting,
     },
   ]);
 
   // Reset when dossier change
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setResult(null);
     setMlScore(null);
@@ -140,11 +164,10 @@ export default function AssistPanel({
     setMessages([
       {
         role: "assistant",
-        content: "Je peux résumer le dossier, expliquer les signaux, proposer des vérifications ou préparer un brouillon CENTIF.",
+        content: greeting,
       },
     ]);
-  }, [objectType, objectId]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [objectType, objectId, greeting]);
 
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({
@@ -183,7 +206,7 @@ export default function AssistPanel({
           ...current,
           {
             role: "assistant",
-            content: `Analyse ML enregistrée. Modèle : ${res.data?.model_score != null ? Number(res.data.model_score).toFixed(1) : "—"}/100. Score opérationnel : ${res.data?.operational_score != null ? Number(res.data.operational_score).toFixed(1) : "—"}/100 (${res.data?.risk_level || "niveau indisponible"}).`,
+            content: `Analyse enregistrée. Score ML : ${res.data?.model_score != null ? Number(res.data.model_score).toFixed(1) : "—"}/100. Score AML déterministe : ${res.data?.rule_score != null ? Number(res.data.rule_score).toFixed(1) : "—"}/100. Les deux signaux restent distincts.`,
           },
         ]);
       }
@@ -230,16 +253,23 @@ export default function AssistPanel({
             content: res.data?.message || "Réponse contextuelle disponible.",
             sources: res.data?.sources || [],
             model: res.data?.model || null,
+            provider: res.data?.provider || null,
+            degraded: Boolean(res.data?.degraded),
           },
         ]);
       } else {
-        setError(res?.message || "Chatbot indisponible.");
+        setMessages((current) => [...current, {
+          role: "assistant",
+          error: true,
+          content: res?.message || "Le service conversationnel est momentanément indisponible.",
+        }]);
       }
     } catch (err) {
-      setError(
-        err.response?.data?.message ||
-          "Impossible de contacter le chatbot de conformité."
-      );
+      setMessages((current) => [...current, {
+        role: "assistant",
+        error: true,
+        content: err.response?.data?.message || "Impossible de contacter le chatbot pour le moment.",
+      }]);
     } finally {
       setLoading(false);
     }
@@ -286,7 +316,7 @@ export default function AssistPanel({
       >
         <header className="assist-drawer-header">
           <div>
-            <p className="assist-eyebrow">AGENT DE CONFORMITÉ</p>
+            <p className="assist-eyebrow">{assistantProfile.eyebrow}</p>
             <h3>{title}</h3>
           </div>
           <div className="assist-drawer-header-actions">
@@ -328,7 +358,7 @@ export default function AssistPanel({
             >
               Questions
             </button>
-            {objectType === "alert" && (
+            {objectType === "alert" && roleId === ROLE_IDS.COMPLIANCE_OFFICER && (
               <button
                 type="button"
                 className="assist-btn"
@@ -341,12 +371,14 @@ export default function AssistPanel({
             <button
               type="button"
               className="assist-btn"
-              disabled={mlLoading}
+              disabled={mlLoading || (!objectId && !transactionId)}
               onClick={runMlScore}
             >
               {mlLoading ? "Score…" : "Score ML"}
             </button>
           </div>
+
+          <div className="assist-scroll-region">
 
           {error && <div className="assist-error">{error}</div>}
 
@@ -359,21 +391,22 @@ export default function AssistPanel({
             </div>
           )}
 
-          {objectId && (
-            <div className="assist-conversation" aria-live="polite">
+          <div className="assist-conversation" aria-live="polite">
               {messages.map((message, index) => (
                 <div
-                  className={`assist-message is-${message.role}`}
+                  className={`assist-message is-${message.role}${message.error ? " is-error" : ""}`}
                   key={`${message.role}-${index}`}
                 >
                   <span>{message.role === "user" ? "Vous" : "Assist"}</span>
                   {message.role === "assistant" ? (
                     <>
                       <AssistantContent content={message.content} />
-                      {Array.isArray(message.sources) && message.sources.length > 0 && (
+                      {(message.provider === "local" || (Array.isArray(message.sources) && message.sources.length > 0)) && (
                         <div className="assist-answer-meta">
                           <span aria-hidden="true">✓</span>
-                          {message.sources.includes("session_authentifiee")
+                          {message.provider === "local"
+                            ? "Mode local sécurisé · données autorisées"
+                            : message.sources.includes("session_authentifiee")
                             ? "Identité de session vérifiée"
                             : `Base interrogée · ${message.sources.length} vérification${message.sources.length > 1 ? "s" : ""}`}
                         </div>
@@ -396,30 +429,13 @@ export default function AssistPanel({
               )}
               <div ref={conversationEndRef} />
             </div>
-          )}
 
           {mlScore && (
             <div className="assist-ml-box">
-              <h4>Score ML (couche 2)</h4>
+              <h4>Double lecture du risque</h4>
               <div className="assist-ml-grid">
                 <div>
-                  <span>Opérationnel</span>
-                  <strong>
-                    {mlScore.operational_score != null
-                      ? Number(mlScore.operational_score).toFixed(1)
-                      : "—"}
-                  </strong>
-                </div>
-                <div>
-                  <span>Modèle</span>
-                  <strong>
-                    {mlScore.model_score != null
-                      ? Number(mlScore.model_score).toFixed(1)
-                      : "—"}
-                  </strong>
-                </div>
-                <div>
-                  <span>Règles</span>
+                  <span>AML · règles</span>
                   <strong>
                     {mlScore.rule_score != null
                       ? Number(mlScore.rule_score).toFixed(1)
@@ -427,17 +443,17 @@ export default function AssistPanel({
                   </strong>
                 </div>
                 <div>
-                  <span>Fusion</span>
+                  <span>ML · modèle</span>
                   <strong>
-                    {mlScore.fused_score != null
-                      ? Number(mlScore.fused_score).toFixed(1)
+                    {mlScore.model_score != null
+                      ? Number(mlScore.model_score).toFixed(1)
                       : "—"}
                   </strong>
                 </div>
               </div>
               <p className="assist-disclaimer">
-                Niveau retenu : {mlScore.risk_level || "—"}. Signal de
-                priorisation uniquement. Moteur : {mlScore.engine || "n/d"}
+                Le score ML assiste l’analyse et ne remplace ni le moteur AML,
+                ni la décision humaine. Moteur : {mlScore.engine || "n/d"}
               </p>
             </div>
           )}
@@ -518,6 +534,7 @@ export default function AssistPanel({
               (résumer, expliquer, score ML, brouillon CENTIF…).
             </p>
           )}
+          </div>
         </div>
 
         <form className="assist-chatbar" onSubmit={onAsk}>
